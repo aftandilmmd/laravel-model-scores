@@ -1,0 +1,9 @@
+{
+    "model-scores::messages.completed": "tamamlandı",
+    "model-scores::messages.ungrouped": "Diğer",
+    "model-scores::messages.adjustment_type.bonus": "Bonus",
+    "model-scores::messages.adjustment_type.penalty": "Ceza",
+    "model-scores::messages.adjustment_type.manual": "Manuel",
+    "model-scores::messages.task_type.static": "Sabit",
+    "model-scores::messages.task_type.periodic": "Periyodik"
+}

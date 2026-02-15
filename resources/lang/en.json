@@ -1,0 +1,9 @@
+{
+    "model-scores::messages.completed": "completed",
+    "model-scores::messages.ungrouped": "Other",
+    "model-scores::messages.adjustment_type.bonus": "Bonus",
+    "model-scores::messages.adjustment_type.penalty": "Penalty",
+    "model-scores::messages.adjustment_type.manual": "Manual",
+    "model-scores::messages.task_type.static": "Static",
+    "model-scores::messages.task_type.periodic": "Periodic"
+}

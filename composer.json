@@ -1,0 +1,31 @@
+{
+    "name": "aftandilmmd/laravel-model-scores",
+    "description": "Flexible quality scoring system for Laravel models",
+    "keywords": ["laravel", "quality", "score", "rating", "gamification"],
+    "license": "MIT",
+    "require": {
+        "php": "^8.2",
+        "illuminate/support": "^11.0|^12.0",
+        "illuminate/database": "^11.0|^12.0"
+    },
+    "suggest": {
+        "livewire/livewire": "Required for Livewire components (^3.0|^4.0)"
+    },
+    "autoload": {
+        "psr-4": {
+            "Aftandilmmd\\LaravelModelScores\\": "src/"
+        }
+    },
+    "extra": {
+        "laravel": {
+            "providers": [
+                "Aftandilmmd\\LaravelModelScores\\LaravelModelScoresServiceProvider"
+            ],
+            "aliases": {
+                "ModelScores": "Aftandilmmd\\LaravelModelScores\\Facades\\ModelScores"
+            }
+        }
+    },
+    "minimum-stability": "dev",
+    "prefer-stable": true
+}
