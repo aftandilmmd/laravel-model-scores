@@ -5,7 +5,7 @@ namespace Aftandilmmd\LaravelModelScores\Models;
 use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Database\Eloquent\Model;
 
-class QualityBadge extends Model
+class ModelScoreBadge extends Model
 {
     protected $fillable = [
         'key',
@@ -35,8 +35,8 @@ class QualityBadge extends Model
 
     public function isEarnedBy(Model $scoreable): bool
     {
-        $scoreColumn = config('model-scores.score_column', 'quality_score');
-        $score = $scoreable->{$scoreColumn} ?? 0;
+        $score = app(\Aftandilmmd\LaravelModelScores\Contracts\ModelScoresServiceInterface::class)
+            ->getTotalScore($scoreable);
 
         if ($this->max_score !== null) {
             return $score >= $this->min_score && $score <= $this->max_score;

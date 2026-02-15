@@ -2,7 +2,7 @@
 
 namespace Aftandilmmd\LaravelModelScores\Commands;
 
-use Aftandilmmd\LaravelModelScores\Models\QualityScoreEvent;
+use Aftandilmmd\LaravelModelScores\Models\ModelScoreEvent;
 use Illuminate\Console\Command;
 
 class PruneScoreEventsCommand extends Command
@@ -11,14 +11,14 @@ class PruneScoreEventsCommand extends Command
         {--days= : Days to retain (overrides config)}
         {--type= : Only prune specific event type}';
 
-    protected $description = 'Prune old quality score event logs';
+    protected $description = 'Prune old model score event logs';
 
     public function handle(): int
     {
         $days = $this->option('days') ?? config('model-scores.event_log.retention_days', 365);
         $type = $this->option('type');
 
-        $eventModel = config('model-scores.models.score_event', QualityScoreEvent::class);
+        $eventModel = config('model-scores.models.score_event', ModelScoreEvent::class);
 
         $query = $eventModel::where('created_at', '<', now()->subDays((int) $days));
 

@@ -8,7 +8,7 @@ use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
 use Illuminate\Database\Eloquent\Relations\MorphTo;
 
-class QualityScoreEvent extends Model
+class ModelScoreEvent extends Model
 {
     public $timestamps = false;
 
@@ -17,7 +17,7 @@ class QualityScoreEvent extends Model
         'scoreable_id',
         'profile',
         'event_type',
-        'quality_task_id',
+        'model_score_task_id',
         'old_score',
         'new_score',
         'old_total',
@@ -47,9 +47,9 @@ class QualityScoreEvent extends Model
         return $this->morphTo();
     }
 
-    public function qualityTask(): BelongsTo
+    public function modelScoreTask(): BelongsTo
     {
-        return $this->belongsTo(config('model-scores.models.task', QualityTask::class), 'quality_task_id');
+        return $this->belongsTo(config('model-scores.models.task', ModelScoreTask::class), 'model_score_task_id');
     }
 
     public function causedBy(): BelongsTo
@@ -76,7 +76,7 @@ class QualityScoreEvent extends Model
 
     public function scopeForTask(Builder $query, int $taskId): Builder
     {
-        return $query->where('quality_task_id', $taskId);
+        return $query->where('model_score_task_id', $taskId);
     }
 
     protected static function booted(): void

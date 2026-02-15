@@ -6,7 +6,7 @@ use Aftandilmmd\LaravelModelScores\Contracts\ModelScoresServiceInterface;
 use Aftandilmmd\LaravelModelScores\Http\Resources\BreakdownResource;
 use Aftandilmmd\LaravelModelScores\Http\Resources\ScoreResource;
 use Aftandilmmd\LaravelModelScores\Http\Resources\TaskResource;
-use Aftandilmmd\LaravelModelScores\Models\QualityAdjustment;
+use Aftandilmmd\LaravelModelScores\Models\ModelScoreAdjustment;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 use Illuminate\Http\Resources\Json\AnonymousResourceCollection;
@@ -72,7 +72,7 @@ class ModelScoresApiController extends Controller
 
     public function revokeAdjustment(int $id): JsonResponse
     {
-        $adjustmentModel = config('model-scores.models.adjustment', QualityAdjustment::class);
+        $adjustmentModel = config('model-scores.models.adjustment', ModelScoreAdjustment::class);
         $adjustment = $adjustmentModel::findOrFail($id);
 
         $this->service->revokeAdjustment($adjustment);

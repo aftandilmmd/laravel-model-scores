@@ -8,7 +8,7 @@ use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
 use Illuminate\Database\Eloquent\Relations\HasMany;
 
-class QualityTask extends Model
+class ModelScoreTask extends Model
 {
     protected $fillable = [
         'group_id',
@@ -46,12 +46,12 @@ class QualityTask extends Model
 
     public function group(): BelongsTo
     {
-        return $this->belongsTo(config('model-scores.models.task_group', QualityTaskGroup::class), 'group_id');
+        return $this->belongsTo(config('model-scores.models.task_group', ModelScoreTaskGroup::class), 'group_id');
     }
 
     public function scores(): HasMany
     {
-        return $this->hasMany(config('model-scores.models.score', QualityScore::class), 'quality_task_id');
+        return $this->hasMany(config('model-scores.models.score', ModelScore::class), 'model_score_task_id');
     }
 
     public function getEffectiveMaxPoints(): float

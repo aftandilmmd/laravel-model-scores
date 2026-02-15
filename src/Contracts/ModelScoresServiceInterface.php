@@ -2,8 +2,8 @@
 
 namespace Aftandilmmd\LaravelModelScores\Contracts;
 
-use Aftandilmmd\LaravelModelScores\Models\QualityAdjustment;
-use Aftandilmmd\LaravelModelScores\Models\QualityBadge;
+use Aftandilmmd\LaravelModelScores\Models\ModelScoreAdjustment;
+use Aftandilmmd\LaravelModelScores\Models\ModelScoreBadge;
 use Carbon\Carbon;
 use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Database\Eloquent\Model;
@@ -28,7 +28,7 @@ interface ModelScoresServiceInterface
     public function getTotalScore(Model $scoreable, string $profile = 'default'): int;
 
     // Badge
-    public function getCurrentBadge(Model $scoreable, string $profile = 'default'): ?QualityBadge;
+    public function getCurrentBadge(Model $scoreable, string $profile = 'default'): ?ModelScoreBadge;
 
     public function getAvailableBadges(string $profile = 'default'): Collection;
 
@@ -38,9 +38,9 @@ interface ModelScoresServiceInterface
     public function getScoreTimeline(Model $scoreable, string $profile = 'default', ?string $eventType = null, int $limit = 50): Collection;
 
     // Manual Adjustment
-    public function addAdjustment(Model $scoreable, int $points, string $type = 'manual', ?string $reason = null, ?Carbon $expiresAt = null, string $profile = 'default'): QualityAdjustment;
+    public function addAdjustment(Model $scoreable, int $points, string $type = 'manual', ?string $reason = null, ?Carbon $expiresAt = null, string $profile = 'default'): ModelScoreAdjustment;
 
-    public function revokeAdjustment(QualityAdjustment $adjustment): void;
+    public function revokeAdjustment(ModelScoreAdjustment $adjustment): void;
 
     public function getActiveAdjustments(Model $scoreable, string $profile = 'default'): Collection;
 

@@ -4,21 +4,19 @@ namespace Aftandilmmd\LaravelModelScores\Services;
 
 use Aftandilmmd\LaravelModelScores\Contracts\ModelScoresServiceInterface;
 use Aftandilmmd\LaravelModelScores\Contracts\ScoreCalculator;
-use Aftandilmmd\LaravelModelScores\Enums\AdjustmentType;
 use Aftandilmmd\LaravelModelScores\Enums\ScoreEventType;
-use Aftandilmmd\LaravelModelScores\Enums\TaskType;
-use Aftandilmmd\LaravelModelScores\Models\QualityAdjustment;
-use Aftandilmmd\LaravelModelScores\Models\QualityBadge;
-use Aftandilmmd\LaravelModelScores\Models\QualityScore;
-use Aftandilmmd\LaravelModelScores\Models\QualityScoreEvent;
-use Aftandilmmd\LaravelModelScores\Models\QualityTask;
-use Aftandilmmd\LaravelModelScores\Models\QualityTaskGroup;
+use Aftandilmmd\LaravelModelScores\Models\ModelScore;
+use Aftandilmmd\LaravelModelScores\Models\ModelScoreAdjustment;
+use Aftandilmmd\LaravelModelScores\Models\ModelScoreBadge;
+use Aftandilmmd\LaravelModelScores\Models\ModelScoreEvent;
+use Aftandilmmd\LaravelModelScores\Models\ModelScoreTask;
+use Aftandilmmd\LaravelModelScores\Models\ModelScoreTaskGroup;
 use Carbon\Carbon;
 use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Support\Collection;
 
-class QualityScoreService implements ModelScoresServiceInterface
+class ModelScoreService implements ModelScoresServiceInterface
 {
     // ──────────────────────────────────────────────────────────────
     // Calculation
@@ -27,8 +25,7 @@ class QualityScoreService implements ModelScoresServiceInterface
     public function calculateFor(Model $scoreable, ?string $type = null, string $profile = 'default'): int
     {
         $tasks = $this->getActiveTasks($type, $profile);
-        $scoreColumn = config('model-scores.score_column', 'quality_score');
-        $oldTotal = (int) ($scoreable->{$scoreColumn} ?? 0);
+        $oldTotal = $this->getStoredTotal($scoreable, $profile);
         $oldBadge = $this->getCurrentBadge($scoreable, $profile);
 
         $totalWeightedScore = 0;
@@ -42,8 +39,7 @@ class QualityScoreService implements ModelScoresServiceInterface
         $newTotal = max(0, $totalWeightedScore + $adjustmentsTotal);
 
         // Update the scoreable model's score column
-        $scoreable->{$scoreColumn} = $newTotal;
-        $scoreable->saveQuietly();
+        $this->saveTotal($scoreable, $newTotal);
 
         // Check badge changes
         $this->processBadgeChanges($scoreable, $oldBadge, $profile);
@@ -82,14 +78,14 @@ class QualityScoreService implements ModelScoresServiceInterface
     public function getBreakdown(Model $scoreable, string $profile = 'default'): Collection
     {
         $tasks = $this->getActiveTasks(null, $profile);
-        $scoreModel = config('model-scores.models.score', QualityScore::class);
+        $scoreModel = config('model-scores.models.score', ModelScore::class);
 
         $scores = $scoreModel::where('scoreable_type', $scoreable->getMorphClass())
             ->where('scoreable_id', $scoreable->getKey())
             ->get()
-            ->keyBy('quality_task_id');
+            ->keyBy('model_score_task_id');
 
-        return $tasks->map(function (QualityTask $task) use ($scores) {
+        return $tasks->map(function (ModelScoreTask $task) use ($scores) {
             $score = $scores->get($task->id);
 
             return (object) [
@@ -110,8 +106,8 @@ class QualityScoreService implements ModelScoresServiceInterface
 
     public function getChecklistItems(Model $scoreable, string $profile = 'default'): Collection
     {
-        $taskModel = config('model-scores.models.task', QualityTask::class);
-        $scoreModel = config('model-scores.models.score', QualityScore::class);
+        $taskModel = config('model-scores.models.task', ModelScoreTask::class);
+        $scoreModel = config('model-scores.models.score', ModelScore::class);
 
         $tasks = $taskModel::active()
             ->forProfile($profile)
@@ -123,9 +119,9 @@ class QualityScoreService implements ModelScoresServiceInterface
         $scores = $scoreModel::where('scoreable_type', $scoreable->getMorphClass())
             ->where('scoreable_id', $scoreable->getKey())
             ->get()
-            ->keyBy('quality_task_id');
+            ->keyBy('model_score_task_id');
 
-        return $tasks->map(function (QualityTask $task) use ($scores) {
+        return $tasks->map(function (ModelScoreTask $task) use ($scores) {
             $score = $scores->get($task->id);
             $earned = $score?->score ?? 0;
             $isComplete = $earned >= $task->max_points;
@@ -153,7 +149,7 @@ class QualityScoreService implements ModelScoresServiceInterface
 
     public function getTaskGroups(string $profile = 'default'): Collection
     {
-        $groupModel = config('model-scores.models.task_group', QualityTaskGroup::class);
+        $groupModel = config('model-scores.models.task_group', ModelScoreTaskGroup::class);
 
         return $groupModel::active()
             ->ordered()
@@ -163,24 +159,21 @@ class QualityScoreService implements ModelScoresServiceInterface
 
     public function getTotalScore(Model $scoreable, string $profile = 'default'): int
     {
-        $scoreColumn = config('model-scores.score_column', 'quality_score');
-
-        return (int) ($scoreable->{$scoreColumn} ?? 0);
+        return $this->getStoredTotal($scoreable, $profile);
     }
 
     // ──────────────────────────────────────────────────────────────
     // Badge
     // ──────────────────────────────────────────────────────────────
 
-    public function getCurrentBadge(Model $scoreable, string $profile = 'default'): ?QualityBadge
+    public function getCurrentBadge(Model $scoreable, string $profile = 'default'): ?ModelScoreBadge
     {
         if (! config('model-scores.features.badges', true)) {
             return null;
         }
 
-        $scoreColumn = config('model-scores.score_column', 'quality_score');
-        $score = (int) ($scoreable->{$scoreColumn} ?? 0);
-        $badgeModel = config('model-scores.models.badge', QualityBadge::class);
+        $score = $this->getStoredTotal($scoreable, $profile);
+        $badgeModel = config('model-scores.models.badge', ModelScoreBadge::class);
 
         return $badgeModel::active()
             ->forProfile($profile)
@@ -191,7 +184,7 @@ class QualityScoreService implements ModelScoresServiceInterface
 
     public function getAvailableBadges(string $profile = 'default'): Collection
     {
-        $badgeModel = config('model-scores.models.badge', QualityBadge::class);
+        $badgeModel = config('model-scores.models.badge', ModelScoreBadge::class);
 
         return $badgeModel::active()
             ->forProfile($profile)
@@ -205,7 +198,7 @@ class QualityScoreService implements ModelScoresServiceInterface
 
     public function getScoreHistory(Model $scoreable, string $profile = 'default', int $days = 30): Collection
     {
-        $eventModel = config('model-scores.models.score_event', QualityScoreEvent::class);
+        $eventModel = config('model-scores.models.score_event', ModelScoreEvent::class);
 
         return $eventModel::where('scoreable_type', $scoreable->getMorphClass())
             ->where('scoreable_id', $scoreable->getKey())
@@ -224,7 +217,7 @@ class QualityScoreService implements ModelScoresServiceInterface
 
     public function getScoreTimeline(Model $scoreable, string $profile = 'default', ?string $eventType = null, int $limit = 50): Collection
     {
-        $eventModel = config('model-scores.models.score_event', QualityScoreEvent::class);
+        $eventModel = config('model-scores.models.score_event', ModelScoreEvent::class);
 
         $query = $eventModel::where('scoreable_type', $scoreable->getMorphClass())
             ->where('scoreable_id', $scoreable->getKey())
@@ -250,8 +243,8 @@ class QualityScoreService implements ModelScoresServiceInterface
         ?string $reason = null,
         ?Carbon $expiresAt = null,
         string $profile = 'default'
-    ): QualityAdjustment {
-        $adjustmentModel = config('model-scores.models.adjustment', QualityAdjustment::class);
+    ): ModelScoreAdjustment {
+        $adjustmentModel = config('model-scores.models.adjustment', ModelScoreAdjustment::class);
 
         $adjustment = $adjustmentModel::create([
             'scoreable_type' => $scoreable->getMorphClass(),
@@ -264,8 +257,7 @@ class QualityScoreService implements ModelScoresServiceInterface
             'granted_by' => auth()->id(),
         ]);
 
-        $scoreColumn = config('model-scores.score_column', 'quality_score');
-        $oldTotal = (int) ($scoreable->{$scoreColumn} ?? 0);
+        $oldTotal = $this->getStoredTotal($scoreable, $profile);
         $newTotal = max(0, $oldTotal + $points);
 
         // Log adjustment event
@@ -287,8 +279,7 @@ class QualityScoreService implements ModelScoresServiceInterface
         );
 
         // Update total score
-        $scoreable->{$scoreColumn} = $newTotal;
-        $scoreable->saveQuietly();
+        $this->saveTotal($scoreable, $newTotal);
 
         // Check badge changes
         $oldBadge = $this->getCurrentBadgeForScore($oldTotal, $profile);
@@ -300,14 +291,13 @@ class QualityScoreService implements ModelScoresServiceInterface
         return $adjustment;
     }
 
-    public function revokeAdjustment(QualityAdjustment $adjustment): void
+    public function revokeAdjustment(ModelScoreAdjustment $adjustment): void
     {
         $adjustment->update(['revoked_at' => now()]);
 
         $scoreable = $adjustment->scoreable;
         $profile = $adjustment->profile;
-        $scoreColumn = config('model-scores.score_column', 'quality_score');
-        $oldTotal = (int) ($scoreable->{$scoreColumn} ?? 0);
+        $oldTotal = $this->getStoredTotal($scoreable, $profile);
         $newTotal = max(0, $oldTotal - $adjustment->points);
 
         $this->logEvent(
@@ -326,13 +316,12 @@ class QualityScoreService implements ModelScoresServiceInterface
             ]
         );
 
-        $scoreable->{$scoreColumn} = $newTotal;
-        $scoreable->saveQuietly();
+        $this->saveTotal($scoreable, $newTotal);
     }
 
     public function getActiveAdjustments(Model $scoreable, string $profile = 'default'): Collection
     {
-        $adjustmentModel = config('model-scores.models.adjustment', QualityAdjustment::class);
+        $adjustmentModel = config('model-scores.models.adjustment', ModelScoreAdjustment::class);
 
         return $adjustmentModel::where('scoreable_type', $scoreable->getMorphClass())
             ->where('scoreable_id', $scoreable->getKey())
@@ -344,7 +333,7 @@ class QualityScoreService implements ModelScoresServiceInterface
 
     public function getAdjustmentsTotal(Model $scoreable, string $profile = 'default'): int
     {
-        $adjustmentModel = config('model-scores.models.adjustment', QualityAdjustment::class);
+        $adjustmentModel = config('model-scores.models.adjustment', ModelScoreAdjustment::class);
 
         return (int) $adjustmentModel::where('scoreable_type', $scoreable->getMorphClass())
             ->where('scoreable_id', $scoreable->getKey())
@@ -359,7 +348,7 @@ class QualityScoreService implements ModelScoresServiceInterface
 
     private function getActiveTasks(?string $type, string $profile): Collection
     {
-        $taskModel = config('model-scores.models.task', QualityTask::class);
+        $taskModel = config('model-scores.models.task', ModelScoreTask::class);
 
         $query = $taskModel::active()->forProfile($profile)->ordered();
 
@@ -370,7 +359,7 @@ class QualityScoreService implements ModelScoresServiceInterface
         return $query->with('group')->get();
     }
 
-    private function calculateTask(Model $scoreable, QualityTask $task): float
+    private function calculateTask(Model $scoreable, ModelScoreTask $task): float
     {
         $calculatorClass = $task->calculator;
 
@@ -386,10 +375,10 @@ class QualityScoreService implements ModelScoresServiceInterface
         $metadata = $result['metadata'] ?? [];
 
         // Apply decay if applicable
-        $scoreModel = config('model-scores.models.score', QualityScore::class);
+        $scoreModel = config('model-scores.models.score', ModelScore::class);
         $existingScore = $scoreModel::where('scoreable_type', $scoreable->getMorphClass())
             ->where('scoreable_id', $scoreable->getKey())
-            ->where('quality_task_id', $task->id)
+            ->where('model_score_task_id', $task->id)
             ->first();
 
         if ($task->decay_days && $existingScore) {
@@ -409,7 +398,7 @@ class QualityScoreService implements ModelScoresServiceInterface
             [
                 'scoreable_type' => $scoreable->getMorphClass(),
                 'scoreable_id' => $scoreable->getKey(),
-                'quality_task_id' => $task->id,
+                'model_score_task_id' => $task->id,
             ],
             [
                 'score' => $rawScore,
@@ -446,7 +435,7 @@ class QualityScoreService implements ModelScoresServiceInterface
             return 0;
         }
 
-        $adjustmentModel = config('model-scores.models.adjustment', QualityAdjustment::class);
+        $adjustmentModel = config('model-scores.models.adjustment', ModelScoreAdjustment::class);
 
         // Handle newly expired adjustments
         $newlyExpired = $adjustmentModel::where('scoreable_type', $scoreable->getMorphClass())
@@ -481,7 +470,7 @@ class QualityScoreService implements ModelScoresServiceInterface
             ->sum('points');
     }
 
-    private function processBadgeChanges(Model $scoreable, ?QualityBadge $oldBadge, string $profile): void
+    private function processBadgeChanges(Model $scoreable, ?ModelScoreBadge $oldBadge, string $profile): void
     {
         if (! config('model-scores.features.badges', true)) {
             return;
@@ -496,8 +485,7 @@ class QualityScoreService implements ModelScoresServiceInterface
             return;
         }
 
-        $scoreColumn = config('model-scores.score_column', 'quality_score');
-        $currentTotal = (int) ($scoreable->{$scoreColumn} ?? 0);
+        $currentTotal = $this->getStoredTotal($scoreable, $profile);
 
         if ($oldBadge !== null) {
             $this->logEvent(
@@ -553,13 +541,13 @@ class QualityScoreService implements ModelScoresServiceInterface
         }
     }
 
-    private function getCurrentBadgeForScore(int $score, string $profile): ?QualityBadge
+    private function getCurrentBadgeForScore(int $score, string $profile): ?ModelScoreBadge
     {
         if (! config('model-scores.features.badges', true)) {
             return null;
         }
 
-        $badgeModel = config('model-scores.models.badge', QualityBadge::class);
+        $badgeModel = config('model-scores.models.badge', ModelScoreBadge::class);
 
         return $badgeModel::active()
             ->forProfile($profile)
@@ -583,14 +571,14 @@ class QualityScoreService implements ModelScoresServiceInterface
             return;
         }
 
-        $eventModel = config('model-scores.models.score_event', QualityScoreEvent::class);
+        $eventModel = config('model-scores.models.score_event', ModelScoreEvent::class);
 
         $eventModel::create([
             'scoreable_type' => $scoreable->getMorphClass(),
             'scoreable_id' => $scoreable->getKey(),
             'profile' => $profile,
             'event_type' => $eventType,
-            'quality_task_id' => $taskId,
+            'model_score_task_id' => $taskId,
             'old_score' => $oldScore,
             'new_score' => $newScore,
             'old_total' => $oldTotal,
@@ -609,5 +597,32 @@ class QualityScoreService implements ModelScoresServiceInterface
         }
 
         event(new $eventClass(...$args));
+    }
+
+    private function getStoredTotal(Model $scoreable, string $profile = 'default'): int
+    {
+        $scoreColumn = config('model-scores.score_column');
+
+        if ($scoreColumn) {
+            return (int) ($scoreable->{$scoreColumn} ?? 0);
+        }
+
+        $scoreModel = config('model-scores.models.score', ModelScore::class);
+
+        return (int) $scoreModel::where('scoreable_type', $scoreable->getMorphClass())
+            ->where('scoreable_id', $scoreable->getKey())
+            ->sum('weighted_score');
+    }
+
+    private function saveTotal(Model $scoreable, int $total): void
+    {
+        $scoreColumn = config('model-scores.score_column');
+
+        if (! $scoreColumn) {
+            return;
+        }
+
+        $scoreable->{$scoreColumn} = $total;
+        $scoreable->saveQuietly();
     }
 }

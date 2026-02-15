@@ -13,7 +13,7 @@ class CalculateScoresCommand extends Command
         {--type=all : Task type filter (all, static, periodic)}
         {--profile=default : Score profile to calculate}';
 
-    protected $description = 'Calculate quality scores for scoreable models';
+    protected $description = 'Calculate model scores for scoreable models';
 
     public function handle(ModelScoresServiceInterface $service): int
     {

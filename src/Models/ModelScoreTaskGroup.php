@@ -6,7 +6,7 @@ use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\HasMany;
 
-class QualityTaskGroup extends Model
+class ModelScoreTaskGroup extends Model
 {
     protected $fillable = [
         'key',
@@ -30,7 +30,7 @@ class QualityTaskGroup extends Model
 
     public function tasks(): HasMany
     {
-        return $this->hasMany(config('model-scores.models.task', QualityTask::class), 'group_id');
+        return $this->hasMany(config('model-scores.models.task', ModelScoreTask::class), 'group_id');
     }
 
     public function scopeActive(Builder $query): Builder

@@ -13,18 +13,18 @@ use Illuminate\Support\Facades\Facade;
  * @method static \Illuminate\Support\Collection getTasks(?string $type = null, string $profile = 'default')
  * @method static \Illuminate\Support\Collection getTaskGroups(string $profile = 'default')
  * @method static int getTotalScore(\Illuminate\Database\Eloquent\Model $scoreable, string $profile = 'default')
- * @method static ?\Aftandilmmd\LaravelModelScores\Models\QualityBadge getCurrentBadge(\Illuminate\Database\Eloquent\Model $scoreable, string $profile = 'default')
+ * @method static ?\Aftandilmmd\LaravelModelScores\Models\ModelScoreBadge getCurrentBadge(\Illuminate\Database\Eloquent\Model $scoreable, string $profile = 'default')
  * @method static \Illuminate\Support\Collection getAvailableBadges(string $profile = 'default')
  * @method static \Illuminate\Support\Collection getScoreHistory(\Illuminate\Database\Eloquent\Model $scoreable, string $profile = 'default', int $days = 30)
  * @method static \Illuminate\Support\Collection getScoreTimeline(\Illuminate\Database\Eloquent\Model $scoreable, string $profile = 'default', ?string $eventType = null, int $limit = 50)
- * @method static \Aftandilmmd\LaravelModelScores\Models\QualityAdjustment addAdjustment(\Illuminate\Database\Eloquent\Model $scoreable, int $points, string $type = 'manual', ?string $reason = null, ?\Carbon\Carbon $expiresAt = null, string $profile = 'default')
- * @method static void revokeAdjustment(\Aftandilmmd\LaravelModelScores\Models\QualityAdjustment $adjustment)
+ * @method static \Aftandilmmd\LaravelModelScores\Models\ModelScoreAdjustment addAdjustment(\Illuminate\Database\Eloquent\Model $scoreable, int $points, string $type = 'manual', ?string $reason = null, ?\Carbon\Carbon $expiresAt = null, string $profile = 'default')
+ * @method static void revokeAdjustment(\Aftandilmmd\LaravelModelScores\Models\ModelScoreAdjustment $adjustment)
  * @method static \Illuminate\Support\Collection getActiveAdjustments(\Illuminate\Database\Eloquent\Model $scoreable, string $profile = 'default')
  * @method static int getAdjustmentsTotal(\Illuminate\Database\Eloquent\Model $scoreable, string $profile = 'default')
  *
- * @see \Aftandilmmd\LaravelModelScores\Services\QualityScoreService
+ * @see \Aftandilmmd\LaravelModelScores\Services\ModelScoreService
  */
-class ModelScores extends Facade
+class ModelScore extends Facade
 {
     protected static function getFacadeAccessor(): string
     {

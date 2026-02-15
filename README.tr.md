@@ -1,6 +1,6 @@
 # Laravel Model Scores
 
-Laravel modelleri için esnek, çok boyutlu kalite puanlama sistemi. Puanlama görevleri tanımlayın, hesaplayıcılar atayın, event sourcing ile puan geçmişini takip edin, rozetleri yönetin ve manuel puan ayarlamaları yapın — hepsi temiz ve genişletilebilir bir paket ile.
+Laravel modelleri için esnek bir puanlama sistemi. Herhangi bir Eloquent modeline puan, ceza ve rozet ekleyin — kurulum gerektirmez. Hazır olduğunuzda hesaplayıcılar, görev grupları, puan azalması, event sourcing ve daha fazlasıyla derinleşin.
 
 **[English (EN)](README.md)** | **[Azerbaijani (AZ)](README.az.md)**
 
@@ -8,22 +8,6 @@ Laravel modelleri için esnek, çok boyutlu kalite puanlama sistemi. Puanlama g�
 
 - PHP 8.2+
 - Laravel 11 veya 12
-
-## Özellikler
-
-- **Strategy Pattern Hesaplayıcılar** — Her puanlama görevi kendi hesaplayıcı sınıfına sahip
-- **Polimorfik Puanlama** — Herhangi bir Eloquent modeli puanlanabilir (User, Tenant, Company vb.)
-- **Görev Grupları** — Görevleri mantıksal gruplara ayırın (Profil, Performans vb.)
-- **Ağırlıklı Puanlama** — Görevler farklı ağırlıklara sahip olabilir (0.50x ile 2.00x arası)
-- **Puan Azalması (Decay)** — Periyodik görev puanları zamanla kademeli olarak azalır
-- **Rozet Sistemi** — Puan eşiklerine göre otomatik rozet ataması
-- **Event Sourcing** — Her puan değişikliği ayrı bir event kaydı olarak tutulur
-- **Manuel Ayarlamalar** — Süreli veya kalıcı bonus/ceza puanları ekleyin
-- **Puan Profilleri** — Model başına birden fazla puan tipi (quality, trust, engagement)
-- **Eşik Bildirimleri** — Puanlar yapılandırılmış eşikleri geçtiğinde event dispatch edilir
-- **Livewire Bileşenleri** — Opsiyonel checklist, ilerleme çubuğu ve grafik widget'ları
-- **REST API** — Puanları ve görevleri yönetmek için opsiyonel API endpoint'leri
-- **Artisan Komutları** — Toplu puan hesaplama, eski event'leri temizleme
 
 ## Kurulum
 
@@ -39,49 +23,101 @@ php artisan vendor:publish --tag=model-scores-migrations
 php artisan migrate
 ```
 
-## Yapılandırma
+## Hızlı Başlangıç
 
-Paket `config/model-scores.php` üzerinden kapsamlı şekilde yapılandırılabilir:
-
-```php
-return [
-    'models' => [
-        'task' => QualityTask::class,
-        'task_group' => QualityTaskGroup::class,
-        'score' => QualityScore::class,
-        // ...
-    ],
-    'tables' => [
-        'task_groups' => 'model_scores_task_groups',
-        'tasks' => 'model_scores_tasks',
-        // ...
-    ],
-    'score_column' => 'quality_score',
-    'features' => [
-        'badges' => true,
-        'event_log' => true,
-        'decay' => true,
-        'adjustments' => true,
-        'weights' => true,
-        // ...
-    ],
-];
-```
-
-## Kullanım
-
-### 1. Modele Trait Ekleyin
+### 1. Trait Ekleyin
 
 ```php
-use Aftandilmmd\LaravelModelScores\Traits\HasQualityScores;
+use Aftandilmmd\LaravelModelScores\Traits\HasModelScores;
 
 class Tenant extends Model
 {
-    use HasQualityScores;
+    use HasModelScores;
 }
 ```
 
-### 2. Hesaplayıcı Oluşturun
+### 2. Puan Ekleyin ve Çıkarın
+
+```php
+// Bonus puan ekle (opsiyonel son kullanma ile)
+$tenant->addScoreBonus(20, 'Hoşgeldin bonusu', now()->addDays(30));
+
+// Ceza puanı ekle
+$tenant->addScorePenalty(10, 'Geç ödeme');
+
+// Toplam puanı oku
+$total = ModelScore::getTotalScore($tenant);
+```
+
+### 3. Mevcut Rozeti Al
+
+```php
+$badge = $tenant->scoreBadge();
+// $badge->name, $badge->color, $badge->icon
+```
+
+### 4. Puan Geçmişini Görüntüle
+
+```php
+$history = $tenant->scoreHistory(days: 30);
+// [{ date, total, previous_total, change }, ...]
+```
+
+Temel kullanım bu kadar — bonus/ceza, rozetler, geçmiş. Hesaplayıcı veya görev tanımlamaya gerek yok.
+
+### Facade Kullanımı
+
+`ModelScore` facade'ı aynı yetenekleri artı toplu işlemleri sunar:
+
+```php
+use Aftandilmmd\LaravelModelScores\Facades\ModelScore;
+
+// Facade ile ayarlama ekle
+ModelScore::addAdjustment($tenant, 20, 'bonus', 'Hoşgeldin bonusu', now()->addDays(30));
+
+// Ayarlamayı iptal et
+ModelScore::revokeAdjustment($adjustment);
+
+// Ayarlamaları sorgula
+$active = ModelScore::getActiveAdjustments($tenant);
+$total = ModelScore::getAdjustmentsTotal($tenant);
+
+// Tüm mevcut rozetleri al
+$badges = ModelScore::getAvailableBadges();
+```
+
+### Puanı Modelde Önbelleğe Alma (Opsiyonel)
+
+Varsayılan olarak toplam puan her okumada veritabanından hesaplanır. Daha hızlı erişim için modelinizin tablosunda önbelleğe alabilirsiniz:
+
+1. Migration'ınıza kolon ekleyin:
+
+```php
+$table->unsignedInteger('model_score')->default(0);
+```
+
+2. Config'de belirtin:
+
+```php
+// config/model-scores.php
+'score_column' => 'model_score',
+```
+
+Artık `$tenant->model_score` her zaman mevcut ve otomatik güncellenir.
+
+---
+
+## Gelişmiş Kullanım
+
+Aşağıdakilerin hepsi opsiyoneldir — ihtiyacınız olanı kullanın.
+
+### Hesaplayıcı Sistemi
+
+Manuel bonus/ceza yerine, modellerinizi otomatik değerlendiren **hesaplayıcılı puanlama görevleri** tanımlayın.
+
+#### Hesaplayıcı Oluşturun
+
+Her puanlama kriteri kendi hesaplayıcı sınıfına sahiptir:
 
 ```php
 use Aftandilmmd\LaravelModelScores\Calculators\BaseCalculator;
@@ -99,81 +135,278 @@ class ProfilePhotoCalculator extends BaseCalculator
 }
 ```
 
-### 3. Görevleri Veritabanına Ekleyin
+#### Görevleri Kaydedin
+
+Puanlanan kriterleri seeder veya migration ile tanımlayın:
 
 ```php
-QualityTask::create([
+use Aftandilmmd\LaravelModelScores\Models\ModelScoreTask;
+
+ModelScoreTask::create([
     'key' => 'profile_photo',
     'name' => 'Profil Fotoğrafı Yükle',
     'calculator' => ProfilePhotoCalculator::class,
     'type' => 'static',
     'max_points' => 50,
-    'weight' => 1.00,
 ]);
 ```
 
-### 4. Puanları Hesaplayın
+#### Puanları Hesaplayın
 
 ```php
-use Aftandilmmd\LaravelModelScores\Facades\ModelScores;
+// Bir model için tüm görevleri hesapla
+$tenant->calculateScore();
 
-// Tek bir model için hesapla
-$toplamPuan = ModelScores::calculateFor($tenant);
+// Sadece statik veya periyodik görevler
+$tenant->calculateScore('static');
 
-// Tüm modeller için hesapla
-ModelScores::calculateForAll(Tenant::class);
+// Tüm modeller için hesapla (100'lük gruplar halinde)
+ModelScore::calculateForAll(Tenant::class);
 
-// Veya trait üzerinden
-$tenant->calculateQualityScore();
+// Özel sorgu ile
+ModelScore::calculateForAll(Tenant::class, query: Tenant::where('is_active', true));
 ```
 
-### 5. Puanları Sorgulayın
+#### Sonuçları Sorgulayın
 
 ```php
-// Detaylı dökümü al
-$breakdown = ModelScores::getBreakdown($tenant);
+// Görev bazlı detaylı döküm
+$breakdown = $tenant->scoreBreakdown();
 
-// Checklist öğelerini al (sihirbaz arayüzü için)
-$checklist = ModelScores::getChecklistItems($tenant);
-
-// Mevcut rozeti al
-$badge = ModelScores::getCurrentBadge($tenant);
-
-// Puan geçmişini al (event sourcing)
-$history = ModelScores::getScoreHistory($tenant, 'default', 30);
-
-// Tüm event'lerin zaman çizelgesi
-$timeline = ModelScores::getScoreTimeline($tenant);
+// Checklist öğeleri (sihirbaz arayüzü için)
+$checklist = $tenant->scoreChecklist();
 ```
 
-### 6. Manuel Ayarlamalar
-
-```php
-// Bonus puan ekle (opsiyonel son kullanma ile)
-ModelScores::addAdjustment($tenant, 20, 'bonus', 'Hoşgeldin bonusu', now()->addDays(30));
-
-// Ceza puanı ekle
-ModelScores::addAdjustment($tenant, -10, 'penalty', 'Geç ödeme');
-
-// Trait kısayolları ile
-$tenant->addQualityBonus(20, 'Hoşgeldin bonusu', now()->addDays(30));
-$tenant->addQualityPenalty(10, 'Geç ödeme');
-
-// Ayarlamayı iptal et
-ModelScores::revokeAdjustment($adjustment);
-```
-
-## BaseCalculator Yardımcı Metodları
+### Hesaplayıcı Yardımcıları
 
 `BaseCalculator` yaygın puanlama kalıpları için yardımcı metodlar sunar:
 
-| Metod | Açıklama |
-|-------|----------|
-| `binaryScore($condition, $maxPoints)` | Boolean'a göre ya hep ya hiç |
-| `proportionalScore($ratio, $maxPoints)` | 0.0–1.0 oranına göre orantılı puan |
-| `inverseScore($ratio, $threshold, $maxPoints)` | Düşük oran = yüksek puan |
-| `tieredScore($value, $tiers, $maxPoints)` | Kademeli eşikler ve oranlar |
-| `applyDecay($score, $decayDays, $calculatedAt)` | Zamanla kademeli puan azalması |
+```php
+// Ya hep ya hiç (boolean kontrol)
+return $this->binaryScore($condition, $maxPoints);
+
+// Orantılı (0.0–1.0 oran)
+return $this->proportionalScore($ratio, $maxPoints);
+
+// Ters orantı (düşük oran = yüksek puan)
+return $this->inverseScore($ratio, $threshold, $maxPoints);
+
+// Kademeli eşikler
+return $this->tieredScore($value, [
+    0 => 0.0, 5 => 0.25, 10 => 0.50, 25 => 0.75, 50 => 1.0,
+], $maxPoints);
+```
+
+#### Hesaplayıcı Örnekleri
+
+**Orantılı — Yorum sayısı**
+
+```php
+class ReviewsCalculator extends BaseCalculator
+{
+    public function calculate(Model $scoreable, int $maxPoints, array $taskMetadata = []): array
+    {
+        $count = $scoreable->reviews()->count();
+
+        return $this->proportionalScore(min(1, $count / 10), $maxPoints);
+    }
+}
+```
+
+**Ters Orantı — İptal oranı (düşük daha iyi)**
+
+```php
+class CancellationRateCalculator extends BaseCalculator
+{
+    public function calculate(Model $scoreable, int $maxPoints, array $taskMetadata = []): array
+    {
+        $total = $scoreable->bookings()->count();
+        $cancelled = $scoreable->bookings()->cancelled()->count();
+        $rate = $total > 0 ? $cancelled / $total : 0;
+
+        return $this->inverseScore($rate, 0.20, $maxPoints);
+    }
+}
+```
+
+**Kademeli — Galeri görsel sayısı**
+
+```php
+class GalleryImagesCalculator extends BaseCalculator
+{
+    public function calculate(Model $scoreable, int $maxPoints, array $taskMetadata = []): array
+    {
+        return $this->tieredScore($scoreable->galleryImages()->count(), [
+            0 => 0.0, 3 => 0.25, 5 => 0.50, 10 => 0.75, 20 => 1.0,
+        ], $maxPoints);
+    }
+}
+```
+
+Her hesaplayıcı `['score' => int, 'metadata' => array]` döndürmelidir. Yardımcı metodlar bunu sizin için halleder.
+
+---
+
+### Görev Grupları
+
+Görevleri mantıksal gruplara ayırın:
+
+```php
+use Aftandilmmd\LaravelModelScores\Models\ModelScoreTaskGroup;
+
+$group = ModelScoreTaskGroup::create([
+    'key' => 'profile',
+    'name' => 'Profil Tamamlama',
+    'icon' => 'user',
+    'order_column' => 1,
+]);
+
+ModelScoreTask::create([
+    'key' => 'profile_photo',
+    'name' => 'Profil Fotoğrafı Yükle',
+    'group_id' => $group->id,
+    'calculator' => ProfilePhotoCalculator::class,
+    'type' => 'static',
+    'max_points' => 50,
+]);
+```
+
+---
+
+### Ağırlıklı Puanlama
+
+Görevlere farklı ağırlıklar verin:
+
+```php
+'features' => ['weights' => true],
+```
+
+```php
+ModelScoreTask::create([
+    'key' => 'reviews',
+    'name' => 'Müşteri Yorumları',
+    'calculator' => ReviewsCalculator::class,
+    'type' => 'periodic',
+    'max_points' => 100,
+    'weight' => 1.50, // 1.5x çarpan → en fazla 150 puan
+]);
+```
+
+---
+
+### Puan Azalması (Decay)
+
+Periyodik görev puanları yeniden hesaplanmazsa zamanla azalır:
+
+```php
+'features' => ['decay' => true],
+'decay' => ['strategy' => 'linear'], // veya 'exponential'
+```
+
+```php
+ModelScoreTask::create([
+    'key' => 'returning_customers',
+    'calculator' => ReturningCustomersCalculator::class,
+    'type' => 'periodic',
+    'max_points' => 100,
+    'decay_days' => 30, // 30 gün sonra azalmaya başlar
+]);
+```
+
+- **Linear**: Azalma süresinden sonra günde %2 azalır
+- **Exponential**: Azalma süresinden sonra her gün 0.95 ile çarpılır
+
+---
+
+### Rozet Sistemi
+
+Puan aralıklarına göre otomatik atanan rozetler:
+
+```php
+use Aftandilmmd\LaravelModelScores\Models\ModelScoreBadge;
+
+ModelScoreBadge::create(['key' => 'bronze', 'name' => 'Bronz', 'min_score' => 100, 'max_score' => 299, 'color' => '#CD7F32']);
+ModelScoreBadge::create(['key' => 'silver', 'name' => 'Gümüş', 'min_score' => 300, 'max_score' => 599, 'color' => '#C0C0C0']);
+ModelScoreBadge::create(['key' => 'gold',   'name' => 'Altın', 'min_score' => 600, 'max_score' => null, 'color' => '#FFD700']);
+```
+
+Puan hesaplaması sırasında rozet değiştiğinde `BadgeEarned` ve `BadgeLost` event'leri otomatik tetiklenir.
+
+---
+
+### Puan Profilleri
+
+Bir modeli birden fazla boyutta bağımsız olarak puanlayın:
+
+```php
+ModelScoreTask::create([
+    'key' => 'profile_photo',
+    'calculator' => ProfilePhotoCalculator::class,
+    'max_points' => 50,
+    'type' => 'static',
+    'profile' => 'quality',
+]);
+
+$tenant->calculateScore(profile: 'quality');
+$badge = $tenant->scoreBadge(profile: 'quality');
+```
+
+---
+
+### Event Sourcing ve Geçmiş
+
+Her puan değişikliği event kaydı olarak tutulur:
+
+```php
+'features' => ['event_log' => true],
+```
+
+```php
+// Günlük toplamlar (grafikler için)
+$history = ModelScore::getScoreHistory($tenant, days: 30);
+
+// Tam event zaman çizelgesi
+$timeline = ModelScore::getScoreTimeline($tenant, limit: 50);
+
+// Event tipine göre filtrele
+$timeline = ModelScore::getScoreTimeline($tenant, eventType: 'badge_earned');
+```
+
+Event tipleri: `task_score_changed`, `adjustment_added`, `adjustment_expired`, `adjustment_revoked`, `badge_earned`, `badge_lost`, `recalculated`
+
+---
+
+### Eşik Bildirimleri
+
+Puanlar yapılandırılmış eşikleri geçtiğinde event tetikleyin:
+
+```php
+'thresholds' => [
+    'score_rose_above' => [500, 750, 900],
+    'score_dropped_below' => [200, 100],
+],
+```
+
+```php
+Event::listen(ScoreThresholdCrossed::class, function ($event) {
+    // $event->scoreable, $event->threshold, $event->direction ('up' veya 'down')
+});
+```
+
+---
+
+## Event'ler
+
+| Event | Ne Zaman |
+| ----- | -------- |
+| `ScoresCalculated` | Bir model için tüm görevler hesaplandıktan sonra |
+| `TaskScoreUpdated` | Tek bir görev puanı değiştiğinde |
+| `BadgeEarned` | Puan yeni bir rozet seviyesine ulaştığında |
+| `BadgeLost` | Puan rozet seviyesinin altına düştüğünde |
+| `ScoreThresholdCrossed` | Yapılandırılmış eşik geçildiğinde |
+| `ManualAdjustmentApplied` | Manuel ayarlama eklendiğinde |
+
+---
 
 ## Artisan Komutları
 
@@ -187,58 +420,79 @@ php artisan model-scores:calculate "App\Models\Tenant" --id=1
 # Sadece statik veya periyodik görevler
 php artisan model-scores:calculate "App\Models\Tenant" --type=static
 
+# Belirli bir profil kullan
+php artisan model-scores:calculate "App\Models\Tenant" --profile=quality
+
 # Eski event kayıtlarını temizle
 php artisan model-scores:prune-events --days=365
 ```
 
-## Event'ler
-
-| Event | Ne Zaman |
-|-------|----------|
-| `ScoresCalculated` | Tüm görevler hesaplandıktan sonra |
-| `TaskScoreUpdated` | Tek bir görev puanı değiştiğinde |
-| `BadgeEarned` | Puan yeni bir rozet seviyesine ulaştığında |
-| `BadgeLost` | Puan rozet seviyesinin altına düştüğünde |
-| `ScoreThresholdCrossed` | Yapılandırılmış eşik geçildiğinde |
-| `ManualAdjustmentApplied` | Manuel ayarlama eklendiğinde |
+---
 
 ## Livewire Bileşenleri (Opsiyonel)
 
 Config'den `model-scores.livewire.enabled = true` ile aktifleştirin:
 
 ```blade
-{{-- Puan checklist (sihirbaz tarzı) --}}
 <livewire:model-scores-checklist :scoreable="$tenant" />
-
-{{-- Rozetli ilerleme çubuğu --}}
 <livewire:model-scores-progress-bar :scoreable="$tenant" />
-
-{{-- Dağılım grafiği (ApexCharts) --}}
 <livewire:model-scores-breakdown-chart :scoreable="$tenant" />
 ```
+
+---
 
 ## REST API (Opsiyonel)
 
 Config'den `model-scores.api.enabled = true` ile aktifleştirin:
 
 | Metod | Endpoint | Açıklama |
-|-------|----------|----------|
+| ----- | -------- | -------- |
 | GET | `/api/model-scores/tasks` | Görev listesi |
 | GET | `/api/model-scores/{type}/{id}/breakdown` | Puan dökümü |
 | GET | `/api/model-scores/{type}/{id}/history` | Puan geçmişi |
 | POST | `/api/model-scores/{type}/{id}/adjustments` | Ayarlama ekle |
 | DELETE | `/api/model-scores/adjustments/{id}` | Ayarlamayı iptal et |
 
+---
+
+## Yapılandırma Referansı
+
+Tüm özellikler `config/model-scores.php`'den açılıp kapatılabilir:
+
+```php
+'features' => [
+    'badges' => true,
+    'event_log' => true,
+    'decay' => true,
+    'adjustments' => true,
+    'weights' => true,
+    'groups' => true,
+    'thresholds' => true,
+],
+```
+
+| Anahtar | Varsayılan | Açıklama |
+| ------- | ---------- | -------- |
+| `score_column` | `null` | Modelde toplam puanı önbelleğe alan kolon. `null` = DB'den hesapla |
+| `decay.strategy` | `'linear'` | `'linear'` veya `'exponential'` |
+| `event_log.retention_days` | `365` | Event kayıtlarını saklama süresi (gün) |
+| `api.enabled` | `false` | REST API endpoint'lerini aktifleştir |
+| `livewire.enabled` | `true` | Livewire bileşenlerini kaydet |
+
+---
+
 ## Veritabanı Tabloları
 
 Paket 6 tablo oluşturur (hepsi config üzerinden özelleştirilebilir):
 
-- `model_scores_task_groups` — Görev grubu tanımları
-- `model_scores_tasks` — Hesaplayıcı FQCN'li görev tanımları
-- `model_scores_scores` — Model başına görev puan sonuçları
-- `model_scores_score_events` — Event seviyesinde puan geçmişi
-- `model_scores_badges` — Rozet/seviye tanımları
-- `model_scores_adjustments` — Manuel puan ayarlamaları
+| Tablo | Amaç |
+| ----- | ---- |
+| `model_scores_task_groups` | Görev grubu tanımları |
+| `model_scores_tasks` | Hesaplayıcı FQCN'li görev tanımları |
+| `model_scores_scores` | Model başına görev puan sonuçları |
+| `model_scores_score_events` | Event seviyesinde puan geçmişi |
+| `model_scores_badges` | Rozet/seviye tanımları |
+| `model_scores_adjustments` | Manuel puan ayarlamaları |
 
 ## Lisans
 

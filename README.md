@@ -1,6 +1,6 @@
 # Laravel Model Scores
 
-A flexible, multi-dimensional quality scoring system for Laravel models. Define scoring tasks, assign calculators, track score history with event sourcing, manage badges, and apply manual adjustments — all through a clean, extensible package.
+A flexible scoring system for Laravel models. Add points, penalties, and badges to any Eloquent model — no setup required. When you're ready, go deeper with calculators, task groups, decay, event sourcing, and more.
 
 **[Turkish (TR)](README.tr.md)** | **[Azerbaijani (AZ)](README.az.md)**
 
@@ -9,29 +9,13 @@ A flexible, multi-dimensional quality scoring system for Laravel models. Define 
 - PHP 8.2+
 - Laravel 11 or 12
 
-## Features
-
-- **Strategy Pattern Calculators** — Each scoring task has its own calculator class
-- **Polymorphic Scoring** — Score any Eloquent model (User, Tenant, Company, etc.)
-- **Task Groups** — Organize tasks into logical groups (Profile, Performance, etc.)
-- **Weighted Scoring** — Tasks can have different weights (0.50x to 2.00x)
-- **Score Decay** — Periodic task scores gradually decrease over time
-- **Badge System** — Automatic badge assignment based on score thresholds
-- **Event Sourcing** — Every score change logged as a separate event record
-- **Manual Adjustments** — Add bonus/penalty points with optional expiration
-- **Score Profiles** — Multiple score types per model (quality, trust, engagement)
-- **Threshold Notifications** — Dispatch events when scores cross configured thresholds
-- **Livewire Components** — Optional checklist, progress bar, and breakdown chart widgets
-- **REST API** — Optional API endpoints for managing scores and tasks
-- **Artisan Commands** — Calculate scores in bulk, prune old events
-
 ## Installation
 
 ```bash
 composer require aftandilmmd/laravel-model-scores
 ```
 
-Publish the configuration and migrations:
+Publish the config and migrations:
 
 ```bash
 php artisan vendor:publish --tag=model-scores-config
@@ -39,49 +23,101 @@ php artisan vendor:publish --tag=model-scores-migrations
 php artisan migrate
 ```
 
-## Configuration
+## Quick Start
 
-The package is highly configurable via `config/model-scores.php`:
-
-```php
-return [
-    'models' => [
-        'task' => QualityTask::class,
-        'task_group' => QualityTaskGroup::class,
-        'score' => QualityScore::class,
-        // ...
-    ],
-    'tables' => [
-        'task_groups' => 'model_scores_task_groups',
-        'tasks' => 'model_scores_tasks',
-        // ...
-    ],
-    'score_column' => 'quality_score',
-    'features' => [
-        'badges' => true,
-        'event_log' => true,
-        'decay' => true,
-        'adjustments' => true,
-        'weights' => true,
-        // ...
-    ],
-];
-```
-
-## Usage
-
-### 1. Add the Trait to Your Model
+### 1. Add the Trait
 
 ```php
-use Aftandilmmd\LaravelModelScores\Traits\HasQualityScores;
+use Aftandilmmd\LaravelModelScores\Traits\HasModelScores;
 
 class Tenant extends Model
 {
-    use HasQualityScores;
+    use HasModelScores;
 }
 ```
 
-### 2. Create a Calculator
+### 2. Add & Remove Points
+
+```php
+// Add bonus points (with optional expiry)
+$tenant->addScoreBonus(20, 'Welcome bonus', now()->addDays(30));
+
+// Add penalty
+$tenant->addScorePenalty(10, 'Late payment');
+
+// Read the total score
+$total = ModelScore::getTotalScore($tenant);
+```
+
+### 3. Get Current Badge
+
+```php
+$badge = $tenant->scoreBadge();
+// $badge->name, $badge->color, $badge->icon
+```
+
+### 4. View Score History
+
+```php
+$history = $tenant->scoreHistory(days: 30);
+// [{ date, total, previous_total, change }, ...]
+```
+
+That's the basics — bonus/penalty, badges, history. No calculators or tasks needed.
+
+### Using the Facade
+
+The `ModelScore` facade gives you the same capabilities plus bulk operations:
+
+```php
+use Aftandilmmd\LaravelModelScores\Facades\ModelScore;
+
+// Add adjustment via facade
+ModelScore::addAdjustment($tenant, 20, 'bonus', 'Welcome bonus', now()->addDays(30));
+
+// Revoke an adjustment
+ModelScore::revokeAdjustment($adjustment);
+
+// Query adjustments
+$active = ModelScore::getActiveAdjustments($tenant);
+$total = ModelScore::getAdjustmentsTotal($tenant);
+
+// Get all available badges
+$badges = ModelScore::getAvailableBadges();
+```
+
+### Caching Score on Model (Optional)
+
+By default, the total score is computed from the database on each read. For faster access, you can cache it on your model's table:
+
+1. Add a column to your migration:
+
+```php
+$table->unsignedInteger('model_score')->default(0);
+```
+
+2. Set it in config:
+
+```php
+// config/model-scores.php
+'score_column' => 'model_score',
+```
+
+Now `$tenant->model_score` is always available and updated automatically.
+
+---
+
+# Advanced Usage
+
+Everything below is optional — use what you need.
+
+## Calculator System
+
+Instead of manual bonuses/penalties, define **scoring tasks** with calculators that automatically evaluate your models.
+
+### Create a Calculator
+
+Each scoring criterion gets its own calculator class:
 
 ```php
 use Aftandilmmd\LaravelModelScores\Calculators\BaseCalculator;
@@ -99,81 +135,284 @@ class ProfilePhotoCalculator extends BaseCalculator
 }
 ```
 
-### 3. Seed Tasks into Database
+### Register Tasks
+
+Define what's being scored via seeder or migration:
 
 ```php
-QualityTask::create([
+use Aftandilmmd\LaravelModelScores\Models\ModelScoreTask;
+
+ModelScoreTask::create([
     'key' => 'profile_photo',
     'name' => 'Upload Profile Photo',
     'calculator' => ProfilePhotoCalculator::class,
     'type' => 'static',
     'max_points' => 50,
-    'weight' => 1.00,
 ]);
 ```
 
-### 4. Calculate Scores
+### Calculate Scores
 
 ```php
-use Aftandilmmd\LaravelModelScores\Facades\ModelScores;
+// Calculate all tasks for a model
+$tenant->calculateScore();
 
-// Calculate for a single model
-$totalScore = ModelScores::calculateFor($tenant);
+// Only static or periodic tasks
+$tenant->calculateScore('static');
 
-// Calculate for all models
-ModelScores::calculateForAll(Tenant::class);
+// Calculate for all models (chunks of 100)
+ModelScore::calculateForAll(Tenant::class);
 
-// Or via the trait
-$tenant->calculateQualityScore();
+// With a custom query
+ModelScore::calculateForAll(Tenant::class, query: Tenant::where('is_active', true));
 ```
 
-### 5. Query Scores
+### Query Results
 
 ```php
-// Get detailed breakdown
-$breakdown = ModelScores::getBreakdown($tenant);
+// Detailed breakdown per task
+$breakdown = $tenant->scoreBreakdown();
 
-// Get checklist items (for wizard UI)
-$checklist = ModelScores::getChecklistItems($tenant);
-
-// Get current badge
-$badge = ModelScores::getCurrentBadge($tenant);
-
-// Get score history (event sourcing)
-$history = ModelScores::getScoreHistory($tenant, 'default', 30);
-
-// Get timeline of all events
-$timeline = ModelScores::getScoreTimeline($tenant);
+// Checklist items (for wizard UI)
+$checklist = $tenant->scoreChecklist();
 ```
 
-### 6. Manual Adjustments
+## Calculator Helpers
+
+`BaseCalculator` provides helpers for common scoring patterns:
 
 ```php
-// Add bonus points (with optional expiry)
-ModelScores::addAdjustment($tenant, 20, 'bonus', 'Welcome bonus', now()->addDays(30));
+// All-or-nothing (boolean check)
+return $this->binaryScore($condition, $maxPoints);
 
-// Add penalty
-ModelScores::addAdjustment($tenant, -10, 'penalty', 'Late payment');
+// Proportional (0.0–1.0 ratio)
+return $this->proportionalScore($ratio, $maxPoints);
 
-// Via trait shortcuts
-$tenant->addQualityBonus(20, 'Welcome bonus', now()->addDays(30));
-$tenant->addQualityPenalty(10, 'Late payment');
+// Inverse (lower ratio = higher score)
+return $this->inverseScore($ratio, $threshold, $maxPoints);
 
-// Revoke an adjustment
-ModelScores::revokeAdjustment($adjustment);
+// Tiered thresholds
+return $this->tieredScore($value, [
+    0 => 0.0,     // 0+ items = 0%
+    5 => 0.25,    // 5+ items = 25%
+    10 => 0.50,   // 10+ items = 50%
+    25 => 0.75,   // 25+ items = 75%
+    50 => 1.0,    // 50+ items = 100%
+], $maxPoints);
 ```
 
-## BaseCalculator Helpers
+### Calculator Examples
 
-The `BaseCalculator` provides helper methods for common scoring patterns:
+#### Proportional — Reviews count
 
-| Method | Description |
-|--------|-------------|
-| `binaryScore($condition, $maxPoints)` | All-or-nothing based on boolean |
-| `proportionalScore($ratio, $maxPoints)` | Score proportional to 0.0–1.0 ratio |
-| `inverseScore($ratio, $threshold, $maxPoints)` | Lower ratio = higher score |
-| `tieredScore($value, $tiers, $maxPoints)` | Tiered thresholds with ratios |
-| `applyDecay($score, $decayDays, $calculatedAt)` | Gradual score decrease over time |
+```php
+class ReviewsCalculator extends BaseCalculator
+{
+    public function calculate(Model $scoreable, int $maxPoints, array $taskMetadata = []): array
+    {
+        $count = $scoreable->reviews()->count();
+
+        return $this->proportionalScore(min(1, $count / 10), $maxPoints);
+    }
+}
+```
+
+#### Inverse — Cancellation rate (lower is better)
+
+```php
+class CancellationRateCalculator extends BaseCalculator
+{
+    public function calculate(Model $scoreable, int $maxPoints, array $taskMetadata = []): array
+    {
+        $total = $scoreable->bookings()->count();
+        $cancelled = $scoreable->bookings()->cancelled()->count();
+        $rate = $total > 0 ? $cancelled / $total : 0;
+
+        return $this->inverseScore($rate, 0.20, $maxPoints);
+    }
+}
+```
+
+#### Tiered — Gallery images
+
+```php
+class GalleryImagesCalculator extends BaseCalculator
+{
+    public function calculate(Model $scoreable, int $maxPoints, array $taskMetadata = []): array
+    {
+        return $this->tieredScore($scoreable->galleryImages()->count(), [
+            0 => 0.0, 3 => 0.25, 5 => 0.50, 10 => 0.75, 20 => 1.0,
+        ], $maxPoints);
+    }
+}
+```
+
+Every calculator must return `['score' => int, 'metadata' => array]`. The helpers handle this for you.
+
+---
+
+## Task Groups
+
+Organize tasks into logical groups:
+
+```php
+use Aftandilmmd\LaravelModelScores\Models\ModelScoreTaskGroup;
+
+$group = ModelScoreTaskGroup::create([
+    'key' => 'profile',
+    'name' => 'Profile Completion',
+    'icon' => 'user',
+    'order_column' => 1,
+]);
+
+ModelScoreTask::create([
+    'key' => 'profile_photo',
+    'name' => 'Upload Profile Photo',
+    'group_id' => $group->id,
+    'calculator' => ProfilePhotoCalculator::class,
+    'type' => 'static',
+    'max_points' => 50,
+]);
+```
+
+---
+
+## Weighted Scoring
+
+Give tasks different weights. Enable in config:
+
+```php
+'features' => ['weights' => true],
+```
+
+```php
+ModelScoreTask::create([
+    'key' => 'reviews',
+    'name' => 'Customer Reviews',
+    'calculator' => ReviewsCalculator::class,
+    'type' => 'periodic',
+    'max_points' => 100,
+    'weight' => 1.50, // 1.5x multiplier → up to 150 points
+]);
+```
+
+---
+
+## Score Decay
+
+Periodic task scores gradually decrease if not recalculated:
+
+```php
+'features' => ['decay' => true],
+'decay' => ['strategy' => 'linear'], // or 'exponential'
+```
+
+```php
+ModelScoreTask::create([
+    'key' => 'returning_customers',
+    'calculator' => ReturningCustomersCalculator::class,
+    'type' => 'periodic',
+    'max_points' => 100,
+    'decay_days' => 30, // starts decaying after 30 days
+]);
+```
+
+- **Linear**: 2% decrease per day after decay period
+- **Exponential**: multiplied by 0.95 each day after decay period
+
+---
+
+## Badge System
+
+Define badges assigned automatically based on score ranges:
+
+```php
+use Aftandilmmd\LaravelModelScores\Models\ModelScoreBadge;
+
+ModelScoreBadge::create(['key' => 'bronze', 'name' => 'Bronze', 'min_score' => 100, 'max_score' => 299, 'color' => '#CD7F32']);
+ModelScoreBadge::create(['key' => 'silver', 'name' => 'Silver', 'min_score' => 300, 'max_score' => 599, 'color' => '#C0C0C0']);
+ModelScoreBadge::create(['key' => 'gold',   'name' => 'Gold',   'min_score' => 600, 'max_score' => null, 'color' => '#FFD700']);
+```
+
+`BadgeEarned` and `BadgeLost` events fire automatically when badge changes.
+
+---
+
+## Score Profiles
+
+Score a model on multiple dimensions independently:
+
+```php
+ModelScoreTask::create([
+    'key' => 'profile_photo',
+    'calculator' => ProfilePhotoCalculator::class,
+    'max_points' => 50,
+    'type' => 'static',
+    'profile' => 'quality',
+]);
+
+$tenant->calculateScore(profile: 'quality');
+$badge = $tenant->scoreBadge(profile: 'quality');
+```
+
+---
+
+## Event Sourcing & History
+
+Every score change is logged as an event record:
+
+```php
+'features' => ['event_log' => true],
+```
+
+```php
+// Daily totals (for charts)
+$history = ModelScore::getScoreHistory($tenant, days: 30);
+
+// Full event timeline
+$timeline = ModelScore::getScoreTimeline($tenant, limit: 50);
+
+// Filter by event type
+$timeline = ModelScore::getScoreTimeline($tenant, eventType: 'badge_earned');
+```
+
+Event types: `task_score_changed`, `adjustment_added`, `adjustment_expired`, `adjustment_revoked`, `badge_earned`, `badge_lost`, `recalculated`
+
+---
+
+## Threshold Notifications
+
+Fire events when scores cross configured thresholds:
+
+```php
+'thresholds' => [
+    'score_rose_above' => [500, 750, 900],
+    'score_dropped_below' => [200, 100],
+],
+```
+
+Listen to `ScoreThresholdCrossed`:
+
+```php
+Event::listen(ScoreThresholdCrossed::class, function ($event) {
+    // $event->scoreable, $event->threshold, $event->direction ('up' or 'down')
+});
+```
+
+---
+
+## Events
+
+| Event | When |
+| ----- | ---- |
+| `ScoresCalculated` | After all tasks are calculated for a model |
+| `TaskScoreUpdated` | When a single task score changes |
+| `BadgeEarned` | When score reaches a new badge level |
+| `BadgeLost` | When score drops below a badge level |
+| `ScoreThresholdCrossed` | When configured threshold is crossed |
+| `ManualAdjustmentApplied` | When a manual adjustment is added |
+
+---
 
 ## Artisan Commands
 
@@ -187,58 +426,79 @@ php artisan model-scores:calculate "App\Models\Tenant" --id=1
 # Only static or periodic tasks
 php artisan model-scores:calculate "App\Models\Tenant" --type=static
 
+# Use a specific profile
+php artisan model-scores:calculate "App\Models\Tenant" --profile=quality
+
 # Prune old event logs
 php artisan model-scores:prune-events --days=365
 ```
 
-## Events
-
-| Event | When |
-|-------|------|
-| `ScoresCalculated` | After all tasks are calculated |
-| `TaskScoreUpdated` | When a single task score changes |
-| `BadgeEarned` | When score reaches a new badge level |
-| `BadgeLost` | When score drops below a badge level |
-| `ScoreThresholdCrossed` | When configured threshold is crossed |
-| `ManualAdjustmentApplied` | When a manual adjustment is added |
+---
 
 ## Livewire Components (Optional)
 
 Enable in config with `model-scores.livewire.enabled = true`:
 
 ```blade
-{{-- Score checklist (wizard-style) --}}
 <livewire:model-scores-checklist :scoreable="$tenant" />
-
-{{-- Progress bar with badge --}}
 <livewire:model-scores-progress-bar :scoreable="$tenant" />
-
-{{-- Breakdown chart (ApexCharts) --}}
 <livewire:model-scores-breakdown-chart :scoreable="$tenant" />
 ```
+
+---
 
 ## REST API (Optional)
 
 Enable in config with `model-scores.api.enabled = true`:
 
 | Method | Endpoint | Description |
-|--------|----------|-------------|
+| ------ | -------- | ----------- |
 | GET | `/api/model-scores/tasks` | List all tasks |
 | GET | `/api/model-scores/{type}/{id}/breakdown` | Score breakdown |
 | GET | `/api/model-scores/{type}/{id}/history` | Score history |
 | POST | `/api/model-scores/{type}/{id}/adjustments` | Add adjustment |
 | DELETE | `/api/model-scores/adjustments/{id}` | Revoke adjustment |
 
+---
+
+## Configuration Reference
+
+All features can be toggled in `config/model-scores.php`:
+
+```php
+'features' => [
+    'badges' => true,
+    'event_log' => true,
+    'decay' => true,
+    'adjustments' => true,
+    'weights' => true,
+    'groups' => true,
+    'thresholds' => true,
+],
+```
+
+| Key | Default | Description |
+| --- | ------- | ----------- |
+| `score_column` | `null` | Column name on model for caching total score. `null` = compute from DB |
+| `decay.strategy` | `'linear'` | `'linear'` or `'exponential'` |
+| `event_log.retention_days` | `365` | Days to keep event logs |
+| `api.enabled` | `false` | Enable REST API endpoints |
+| `livewire.enabled` | `true` | Register Livewire components |
+
+---
+
 ## Database Tables
 
 The package creates 6 tables (all customizable via config):
 
-- `model_scores_task_groups` — Task group definitions
-- `model_scores_tasks` — Task definitions with calculator FQCN
-- `model_scores_scores` — Per-model task score results
-- `model_scores_score_events` — Event-level score history
-- `model_scores_badges` — Badge/level definitions
-- `model_scores_adjustments` — Manual point adjustments
+| Table | Purpose |
+| ----- | ------- |
+| `model_scores_task_groups` | Task group definitions |
+| `model_scores_tasks` | Task definitions with calculator FQCN |
+| `model_scores_scores` | Per-model task score results |
+| `model_scores_score_events` | Event-level score history |
+| `model_scores_badges` | Badge/level definitions |
+| `model_scores_adjustments` | Manual point adjustments |
 
 ## License
 

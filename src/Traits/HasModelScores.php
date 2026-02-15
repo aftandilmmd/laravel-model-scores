@@ -3,66 +3,66 @@
 namespace Aftandilmmd\LaravelModelScores\Traits;
 
 use Aftandilmmd\LaravelModelScores\Contracts\ModelScoresServiceInterface;
-use Aftandilmmd\LaravelModelScores\Models\QualityAdjustment;
-use Aftandilmmd\LaravelModelScores\Models\QualityBadge;
-use Aftandilmmd\LaravelModelScores\Models\QualityScore;
-use Aftandilmmd\LaravelModelScores\Models\QualityScoreEvent;
+use Aftandilmmd\LaravelModelScores\Models\ModelScore;
+use Aftandilmmd\LaravelModelScores\Models\ModelScoreAdjustment;
+use Aftandilmmd\LaravelModelScores\Models\ModelScoreBadge;
+use Aftandilmmd\LaravelModelScores\Models\ModelScoreEvent;
 use Carbon\Carbon;
 use Illuminate\Database\Eloquent\Relations\MorphMany;
 use Illuminate\Support\Collection;
 
-trait HasQualityScores
+trait HasModelScores
 {
-    public function qualityScores(): MorphMany
+    public function scores(): MorphMany
     {
         return $this->morphMany(
-            config('model-scores.models.score', QualityScore::class),
+            config('model-scores.models.score', ModelScore::class),
             'scoreable'
         );
     }
 
-    public function qualityEvents(): MorphMany
+    public function scoreEvents(): MorphMany
     {
         return $this->morphMany(
-            config('model-scores.models.score_event', QualityScoreEvent::class),
+            config('model-scores.models.score_event', ModelScoreEvent::class),
             'scoreable'
         );
     }
 
-    public function qualityAdjustments(): MorphMany
+    public function scoreAdjustments(): MorphMany
     {
         return $this->morphMany(
-            config('model-scores.models.adjustment', QualityAdjustment::class),
+            config('model-scores.models.adjustment', ModelScoreAdjustment::class),
             'scoreable'
         );
     }
 
-    public function calculateQualityScore(?string $type = null, string $profile = 'default'): int
+    public function calculateScore(?string $type = null, string $profile = 'default'): int
     {
         return app(ModelScoresServiceInterface::class)->calculateFor($this, $type, $profile);
     }
 
-    public function getQualityBreakdown(string $profile = 'default'): Collection
+    public function scoreBreakdown(string $profile = 'default'): Collection
     {
         return app(ModelScoresServiceInterface::class)->getBreakdown($this, $profile);
     }
 
-    public function getQualityChecklist(string $profile = 'default'): Collection
+    public function scoreChecklist(string $profile = 'default'): Collection
     {
         return app(ModelScoresServiceInterface::class)->getChecklistItems($this, $profile);
     }
 
-    public function getQualityBadge(string $profile = 'default'): ?QualityBadge
+    public function scoreBadge(string $profile = 'default'): ?ModelScoreBadge
     {
         return app(ModelScoresServiceInterface::class)->getCurrentBadge($this, $profile);
     }
 
-    public function getQualityHistory(string $profile = 'default', int $days = 30): Collection
+    public function scoreHistory(string $profile = 'default', int $days = 30): Collection
     {
         return app(ModelScoresServiceInterface::class)->getScoreHistory($this, $profile, $days);
     }
 
-    public function addQualityBonus(int $points, ?string $reason = null, ?Carbon $expiresAt = null, string $profile = 'default'): QualityAdjustment
+    public function addScoreBonus(int $points, ?string $reason = null, ?Carbon $expiresAt = null, string $profile = 'default'): ModelScoreAdjustment
     {
         return app(ModelScoresServiceInterface::class)->addAdjustment(
             $this,
@@ -74,7 +74,7 @@ trait HasQualityScores
         );
     }
 
-    public function addQualityPenalty(int $points, ?string $reason = null, ?Carbon $expiresAt = null, string $profile = 'default'): QualityAdjustment
+    public function addScorePenalty(int $points, ?string $reason = null, ?Carbon $expiresAt = null, string $profile = 'default'): ModelScoreAdjustment
     {
         return app(ModelScoresServiceInterface::class)->addAdjustment(
             $this,

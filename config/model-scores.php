@@ -13,12 +13,12 @@ return [
     */
 
     'models' => [
-        'task' => \Aftandilmmd\LaravelModelScores\Models\QualityTask::class,
-        'task_group' => \Aftandilmmd\LaravelModelScores\Models\QualityTaskGroup::class,
-        'score' => \Aftandilmmd\LaravelModelScores\Models\QualityScore::class,
-        'score_event' => \Aftandilmmd\LaravelModelScores\Models\QualityScoreEvent::class,
-        'badge' => \Aftandilmmd\LaravelModelScores\Models\QualityBadge::class,
-        'adjustment' => \Aftandilmmd\LaravelModelScores\Models\QualityAdjustment::class,
+        'task' => \Aftandilmmd\LaravelModelScores\Models\ModelScoreTask::class,
+        'task_group' => \Aftandilmmd\LaravelModelScores\Models\ModelScoreTaskGroup::class,
+        'score' => \Aftandilmmd\LaravelModelScores\Models\ModelScore::class,
+        'score_event' => \Aftandilmmd\LaravelModelScores\Models\ModelScoreEvent::class,
+        'badge' => \Aftandilmmd\LaravelModelScores\Models\ModelScoreBadge::class,
+        'adjustment' => \Aftandilmmd\LaravelModelScores\Models\ModelScoreAdjustment::class,
     ],
 
     /*
@@ -44,12 +44,14 @@ return [
     | Score Column
     |--------------------------------------------------------------------------
     |
-    | The column name on the scoreable model's table that stores the total
-    | quality score. You must add this column to your model's table yourself.
+    | The column name on the scoreable model's table that caches the total
+    | score. Set to null to skip caching on the model (scores will be
+    | computed from the scores table on each read). When set, you must
+    | add this column to your model's table yourself.
     |
     */
 
-    'score_column' => 'quality_score',
+    'score_column' => null,
 
     /*
     |--------------------------------------------------------------------------

@@ -6,12 +6,12 @@ use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
 use Illuminate\Database\Eloquent\Relations\MorphTo;
 
-class QualityScore extends Model
+class ModelScore extends Model
 {
     protected $fillable = [
         'scoreable_type',
         'scoreable_id',
-        'quality_task_id',
+        'model_score_task_id',
         'score',
         'max_score',
         'weighted_score',
@@ -37,9 +37,9 @@ class QualityScore extends Model
         return $this->morphTo();
     }
 
-    public function qualityTask(): BelongsTo
+    public function modelScoreTask(): BelongsTo
     {
-        return $this->belongsTo(config('model-scores.models.task', QualityTask::class), 'quality_task_id');
+        return $this->belongsTo(config('model-scores.models.task', ModelScoreTask::class), 'model_score_task_id');
     }
 
     public function isStale(int $days): bool

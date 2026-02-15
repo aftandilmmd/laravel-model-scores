@@ -5,7 +5,7 @@ namespace Aftandilmmd\LaravelModelScores;
 use Aftandilmmd\LaravelModelScores\Commands\CalculateScoresCommand;
 use Aftandilmmd\LaravelModelScores\Commands\PruneScoreEventsCommand;
 use Aftandilmmd\LaravelModelScores\Contracts\ModelScoresServiceInterface;
-use Aftandilmmd\LaravelModelScores\Services\QualityScoreService;
+use Aftandilmmd\LaravelModelScores\Services\ModelScoreService;
 use Illuminate\Support\ServiceProvider;
 
 class LaravelModelScoresServiceProvider extends ServiceProvider
@@ -15,7 +15,7 @@ class LaravelModelScoresServiceProvider extends ServiceProvider
         $this->mergeConfigFrom(__DIR__.'/../config/model-scores.php', 'model-scores');
 
         $this->app->singleton(ModelScoresServiceInterface::class, function ($app) {
-            return new QualityScoreService;
+            return new ModelScoreService;
         });
 
         $this->app->alias(ModelScoresServiceInterface::class, 'model-scores');
