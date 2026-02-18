@@ -467,6 +467,8 @@ Config-dən `model-scores.livewire.enabled = true` ilə aktivləşdirin:
 <livewire:model-scores-breakdown-chart :scoreable="$tenant" />
 ```
 
+![Tasks List](screenshots/tasks-list.png)
+
 ---
 
 ## REST API (Opsional)
