@@ -1,5 +1,7 @@
 # Laravel Model Scores
 
+![Business Score](screenshots/business-score.png)
+
 Laravel modelləri üçün çevik xallandırma sistemi. İstənilən Eloquent modelinə xal, cərimə və nişan əlavə edin — quraşdırma tələb olunmur. Hazır olduqda kalkulyatorlar, tapşırıq qrupları, xal azalması, event sourcing və daha çoxu ilə dərinləşin.
 
 **[English (EN)](README.md)** | **[Turkish (TR)](README.tr.md)**

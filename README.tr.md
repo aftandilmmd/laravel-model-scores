@@ -1,5 +1,7 @@
 # Laravel Model Scores
 
+![Business Score](screenshots/business-score.png)
+
 Laravel modelleri için esnek bir puanlama sistemi. Herhangi bir Eloquent modeline puan, ceza ve rozet ekleyin — kurulum gerektirmez. Hazır olduğunuzda hesaplayıcılar, görev grupları, puan azalması, event sourcing ve daha fazlasıyla derinleşin.
 
 **[English (EN)](README.md)** | **[Azerbaijani (AZ)](README.az.md)**

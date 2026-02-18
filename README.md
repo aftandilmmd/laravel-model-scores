@@ -1,5 +1,7 @@
 # Laravel Model Scores
 
+![Business Score](screenshots/business-score.png)
+
 A flexible scoring system for Laravel models. Add points, penalties, and badges to any Eloquent model — no setup required. When you're ready, go deeper with calculators, task groups, decay, event sourcing, and more.
 
 **[Turkish (TR)](README.tr.md)** | **[Azerbaijani (AZ)](README.az.md)**
