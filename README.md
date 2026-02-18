@@ -4,6 +4,34 @@ A flexible scoring system for Laravel models. Add points, penalties, and badges 
 
 **[Turkish (TR)](README.tr.md)** | **[Azerbaijani (AZ)](README.az.md)**
 
+## Why This Package?
+
+Most Laravel applications eventually need to score, rank, or rate something — a vendor's reliability, a user's profile completeness, a listing's quality. You start with a few `if` statements, then add weights, then need history tracking, then someone asks for badges. Before long, scoring logic is scattered across your codebase with no audit trail and no consistency.
+
+Laravel Model Scores gives you a structured way to handle this. Define each scoring criterion as an isolated calculator class, group them logically, assign weights, and let the package handle the rest — badge transitions, event sourcing, score decay, and bulk recalculation.
+
+**Common use cases:**
+
+- **Marketplace quality scores** — Score vendors on profile completeness, response rates, reviews, and fulfillment metrics. Think Airbnb Superhost or Etsy Star Seller.
+- **Profile completion** — Drive users to complete their profiles with a checklist and progress bar. Each missing field is a scoring task.
+- **Gamification and loyalty tiers** — Award points for engagement, purchases, or content creation. Assign Bronze/Silver/Gold badges automatically based on score ranges.
+- **Compliance scoring** — Score organizations on safety audits, regulatory adherence, or process completion. Decay ensures stale compliance degrades over time.
+- **Content and listing quality** — Score products or articles on data completeness, image count, and description quality. Use scores for search ranking.
+
+**When to use it:**
+
+- You have multiple independent scoring criteria
+- Criteria use different logic (boolean checks, proportional metrics, inverse ratios, tiered thresholds)
+- You need an audit trail of score changes
+- You want badges or tiers that update automatically
+- Some metrics should decay if not refreshed
+
+**When you probably don't need it:**
+
+- A single integer counter is enough (just use a column)
+- You only need user-submitted star ratings (use a reviews package)
+- Your "score" is one computed value with no history requirement
+
 ## Requirements
 
 - PHP 8.2+

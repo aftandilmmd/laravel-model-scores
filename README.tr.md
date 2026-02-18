@@ -4,6 +4,34 @@ Laravel modelleri için esnek bir puanlama sistemi. Herhangi bir Eloquent modeli
 
 **[English (EN)](README.md)** | **[Azerbaijani (AZ)](README.az.md)**
 
+## Neden Bu Paket?
+
+Çoğu Laravel uygulaması bir noktada bir şeyleri puanlamak, sıralamak veya derecelendirmek zorunda kalır — bir satıcının güvenilirliği, bir kullanıcının profil tamlığı, bir ilanın kalitesi. Birkaç `if` ifadesiyle başlarsınız, sonra ağırlıklar eklersiniz, sonra geçmiş takibi gerekir, sonra birisi rozet ister. Kısa sürede puanlama mantığı kod tabanınıza dağılmış, denetim izi olmayan ve tutarsız bir hale gelir.
+
+Laravel Model Scores bunu yapısal bir şekilde çözer. Her puanlama kriterini izole bir hesaplayıcı sınıf olarak tanımlayın, mantıksal gruplara ayırın, ağırlıklar atayın ve gerisini pakete bırakın — rozet geçişleri, event sourcing, puan azalması ve toplu yeniden hesaplama dahil.
+
+**Yaygın kullanım alanları:**
+
+- **Pazar yeri kalite puanları** — Satıcıları profil tamlığı, yanıt oranları, yorumlar ve teslimat metriklerine göre puanlayın. Airbnb Superhost veya Etsy Star Seller mantığı.
+- **Profil tamamlama** — Kullanıcıları checklist ve ilerleme çubuğuyla profillerini tamamlamaya yönlendirin. Her eksik alan bir puanlama görevidir.
+- **Oyunlaştırma ve sadakat seviyeleri** — Etkileşim, satın alma veya içerik üretimine puan verin. Puan aralıklarına göre Bronz/Gümüş/Altın rozetleri otomatik atayın.
+- **Uyumluluk puanlama** — Kuruluşları güvenlik denetimleri, mevzuat uyumu veya süreç tamamlama durumuna göre puanlayın. Decay özelliği güncelliğini yitiren uyumluluğu zamanla düşürür.
+- **İçerik ve ilan kalitesi** — Ürünleri veya makaleleri veri tamlığı, görsel sayısı ve açıklama kalitesine göre puanlayın. Puanları arama sıralamasında kullanın.
+
+**Ne zaman kullanmalısınız:**
+
+- Birden fazla bağımsız puanlama kriteriniz var
+- Kriterler farklı mantık kullanıyor (boolean kontrol, orantılı metrik, ters oran, kademeli eşik)
+- Puan değişikliklerinin denetim izine ihtiyacınız var
+- Rozetlerin veya seviyelerin otomatik güncellenmesini istiyorsunuz
+- Bazı metriklerin yenilenmezse zamanla azalması gerekiyor
+
+**Ne zaman muhtemelen gerekmez:**
+
+- Tek bir tamsayı sayacı yeterli (sadece bir kolon kullanın)
+- Sadece kullanıcıların verdiği yıldız puanlarına ihtiyacınız var (bir yorum paketi kullanın)
+- "Puanınız" geçmiş kaydı gerektirmeyen tek bir hesaplanan değer
+
 ## Gereksinimler
 
 - PHP 8.2+

@@ -4,6 +4,34 @@ Laravel modelləri üçün çevik xallandırma sistemi. İstənilən Eloquent mo
 
 **[English (EN)](README.md)** | **[Turkish (TR)](README.tr.md)**
 
+## Niyə Bu Paket?
+
+Əksər Laravel tətbiqləri müəyyən bir məqamda nəyisə xallamaq, sıralamaq və ya qiymətləndirmək məcburiyyətində qalır — satıcının etibarlılığı, istifadəçinin profil tamlığı, elanın keyfiyyəti. Bir neçə `if` ifadəsi ilə başlayırsınız, sonra çəkilər əlavə edirsiniz, sonra tarixçə izləmə lazım olur, sonra kimsə nişan istəyir. Qısa müddətdə xallandırma məntiqi kod bazanıza dağılmış, audit izi olmayan və qeyri-ardıcıl vəziyyətə gəlir.
+
+Laravel Model Scores bunu strukturlu şəkildə həll edir. Hər xallandırma meyarını izolə edilmiş kalkulyator sinfi olaraq təyin edin, məntiqi qruplara ayırın, çəkilər təyin edin və qalanını paketə buraxın — nişan keçidləri, event sourcing, xal azalması və toplu yenidən hesablama daxil.
+
+**Ümumi istifadə sahələri:**
+
+- **Bazar keyfiyyət xalları** — Satıcıları profil tamlığı, cavab nisbətləri, rəylər və icra metriklərinə görə xallandırın. Airbnb Superhost və ya Etsy Star Seller məntiqi.
+- **Profil tamamlama** — İstifadəçiləri checklist və irəliləmə çubuğu ilə profillərini tamamlamağa yönləndirin. Hər boş sahə bir xallandırma tapşırığıdır.
+- **Oyunlaşdırma və sadiqlik səviyyələri** — Əlaqə, satınalma və ya məzmun istehsalına xal verin. Xal aralıqlarına görə Bürünc/Gümüş/Qızıl nişanları avtomatik təyin edin.
+- **Uyğunluq xallandırma** — Təşkilatları təhlükəsizlik auditləri, normativ uyğunluq və ya proses tamamlama vəziyyətinə görə xallandırın. Decay xüsusiyyəti köhnəlmiş uyğunluğu zamanla azaldır.
+- **Məzmun və elan keyfiyyəti** — Məhsulları və ya məqalələri verilənlər tamlığı, şəkil sayı və təsvir keyfiyyətinə görə xallandırın. Xalları axtarış sıralamasında istifadə edin.
+
+**Nə zaman istifadə etməlisiniz:**
+
+- Birdən çox müstəqil xallandırma meyarınız var
+- Meyarlar fərqli məntiq istifadə edir (boolean yoxlama, mütənasib metrik, əks nisbət, pilləli hədd)
+- Xal dəyişikliklərinin audit izinə ehtiyacınız var
+- Nişanların və ya səviyyələrin avtomatik yenilənməsini istəyirsiniz
+- Bəzi metriklərin yenilənməzsə zamanla azalması lazımdır
+
+**Nə zaman ehtimal ki lazım deyil:**
+
+- Tək bir tam ədəd sayğacı kifayətdir (sadəcə bir kolon istifadə edin)
+- Yalnız istifadəçilərin verdiyi ulduz xallarına ehtiyacınız var (bir rəy paketi istifadə edin)
+- "Xalınız" tarixçə tələb etməyən tək bir hesablanmış dəyərdir
+
 ## Tələblər
 
 - PHP 8.2+
