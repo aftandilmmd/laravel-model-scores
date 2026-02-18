@@ -234,16 +234,17 @@ $this->binaryScore(bool $condition, int $maxPoints, array $metadata = []): array
 
 **Formul:** `$condition ? $maxPoints : 0`
 
-**Nümunə — Profil şəkli yüklənib mi:**
+**Nümunə — Host kimlik təsdiqi (Airbnb Superhost):**
 
 ```php
-class ProfilePhotoCalculator extends BaseCalculator
+class HostIdentityVerifiedCalculator extends BaseCalculator
 {
     public function calculate(Model $scoreable, int $maxPoints, array $taskMetadata = []): array
     {
         return $this->binaryScore(
-            ! empty($scoreable->profile_photo),
-            $maxPoints
+            ! empty($scoreable->identity_verified_at),
+            $maxPoints,
+            ['verified' => ! empty($scoreable->identity_verified_at)]
         );
     }
 }
@@ -251,8 +252,8 @@ class ProfilePhotoCalculator extends BaseCalculator
 
 | Ssenari | maxPoints | Nəticə |
 | ------- | --------- | ------ |
-| Şəkil var | 50 | `['score' => 50, 'metadata' => []]` |
-| Şəkil yoxdur | 50 | `['score' => 0, 'metadata' => []]` |
+| Təsdiqlənib | 50 | `['score' => 50, 'metadata' => ['verified' => true]]` |
+| Təsdiqlənməyib | 50 | `['score' => 0, 'metadata' => ['verified' => false]]` |
 
 ---
 
@@ -271,29 +272,34 @@ $this->proportionalScore(float $ratio, int $maxPoints, array $metadata = []): ar
 
 **Formul:** `round(clamp($ratio, 0, 1) * $maxPoints)`
 
-**Nümunə — Rəy sayısı (hədəf: tam xal üçün 10 rəy):**
+**Nümunə — Host cavab nisbəti (Airbnb Superhost üçün %90+ tələb olunur):**
 
 ```php
-class ReviewsCalculator extends BaseCalculator
+class ResponseRateCalculator extends BaseCalculator
 {
     public function calculate(Model $scoreable, int $maxPoints, array $taskMetadata = []): array
     {
-        $count = $scoreable->reviews()->count();
+        $total = $scoreable->inquiries()->where('created_at', '>=', now()->subYear())->count();
+        $responded = $scoreable->inquiries()->where('created_at', '>=', now()->subYear())
+            ->whereNotNull('responded_at')->count();
 
-        return $this->proportionalScore(
-            min(1, $count / 10),
-            $maxPoints
-        );
+        $rate = $total > 0 ? $responded / $total : 1.0;
+
+        return $this->proportionalScore($rate, $maxPoints, [
+            'total_inquiries' => $total,
+            'responded' => $responded,
+            'response_rate' => round($rate * 100, 1),
+        ]);
     }
 }
 ```
 
-| Rəy | Nisbət | maxPoints | Xal |
-| --- | ------ | --------- | --- |
-| 0 | 0.0 | 100 | 0 |
-| 3 | 0.3 | 100 | 30 |
-| 7 | 0.7 | 100 | 70 |
-| 10+ | 1.0 | 100 | 100 |
+| Cavab Nisbəti | Nisbət | maxPoints | Xal |
+| ------------- | ------ | --------- | --- |
+| %100 | 1.0 | 100 | 100 |
+| %90 | 0.9 | 100 | 90 |
+| %50 | 0.5 | 100 | 50 |
+| %0 | 0.0 | 100 | 0 |
 
 ---
 
@@ -313,29 +319,35 @@ $this->inverseScore(float $ratio, float $threshold, int $maxPoints, array $metad
 
 **Formul:** `ratio >= threshold ? 0 : round((1 - ratio / threshold) * maxPoints)`
 
-**Nümunə — Ləğv nisbəti (%0 = tam xal, %20+ = sıfır):**
+**Nümunə — Host ləğv nisbəti (Airbnb Superhost üçün <%1 tələb olunur):**
 
 ```php
 class CancellationRateCalculator extends BaseCalculator
 {
     public function calculate(Model $scoreable, int $maxPoints, array $taskMetadata = []): array
     {
-        $total = $scoreable->bookings()->count();
-        $cancelled = $scoreable->bookings()->cancelled()->count();
+        $total = $scoreable->reservations()->where('check_in', '>=', now()->subYear())->count();
+        $cancelled = $scoreable->reservations()->where('check_in', '>=', now()->subYear())
+            ->where('cancelled_by', 'host')->count();
+
         $rate = $total > 0 ? $cancelled / $total : 0;
 
-        return $this->inverseScore($rate, 0.20, $maxPoints);
+        return $this->inverseScore($rate, 0.05, $maxPoints, [
+            'total_reservations' => $total,
+            'cancelled_by_host' => $cancelled,
+            'cancellation_rate' => round($rate * 100, 2),
+        ]);
     }
 }
 ```
 
 | Ləğv Nisbəti | Hədd | maxPoints | Xal |
 | ------------ | ---- | --------- | --- |
-| %0 (0.00) | 0.20 | 100 | 100 |
-| %5 (0.05) | 0.20 | 100 | 75 |
-| %10 (0.10) | 0.20 | 100 | 50 |
-| %15 (0.15) | 0.20 | 100 | 25 |
-| %20+ (0.20) | 0.20 | 100 | 0 |
+| %0 (0.00) | 0.05 | 100 | 100 |
+| %1 (0.01) | 0.05 | 100 | 80 |
+| %2.5 (0.025) | 0.05 | 100 | 50 |
+| %4 (0.04) | 0.05 | 100 | 20 |
+| %5+ (0.05) | 0.05 | 100 | 0 |
 
 ---
 
@@ -355,19 +367,20 @@ $this->tieredScore(float $value, array $tiers, int $maxPoints, array $metadata =
 
 **Formul:** `$value >= threshold` olan ən yüksək pilləni tap, nisbətini al, sonra `round(nisbət * maxPoints)`.
 
-**Nümunə — Qalereya şəkilləri:**
+**Nümunə — Elan fotoşəkilləri (Airbnb 20+ şəkil tövsiyə edir):**
 
 ```php
-class GalleryImagesCalculator extends BaseCalculator
+class ListingPhotosCalculator extends BaseCalculator
 {
     public function calculate(Model $scoreable, int $maxPoints, array $taskMetadata = []): array
     {
-        return $this->tieredScore($scoreable->galleryImages()->count(), [
-            0  => 0.0,   // 0 şəkil  → %0
-            3  => 0.25,  // 3+ şəkil → %25
-            5  => 0.50,  // 5+ şəkil → %50
-            10 => 0.75,  // 10+ şəkil → %75
-            20 => 1.0,   // 20+ şəkil → %100
+        return $this->tieredScore($scoreable->photos()->count(), [
+            0  => 0.0,   // Şəkil yoxdur
+            1  => 0.15,  // Ən azı bir — elan görünür
+            5  => 0.35,  // Əsas sahə əhatəsi
+            10 => 0.60,  // Yaxşı — hər otaq göstərilib
+            15 => 0.80,  // Ətraflı — imkanlar və ətraf
+            20 => 1.0,   // Peşəkar səviyyə elan
         ], $maxPoints);
     }
 }
@@ -375,11 +388,11 @@ class GalleryImagesCalculator extends BaseCalculator
 
 | Şəkil | Uyğun Pillə | Nisbət | maxPoints | Xal |
 | ----- | ----------- | ------ | --------- | --- |
-| 0 | `0 => 0.0` | 0.0 | 100 | 0 |
-| 4 | `3 => 0.25` | 0.25 | 100 | 25 |
-| 7 | `5 => 0.50` | 0.50 | 100 | 50 |
-| 15 | `10 => 0.75` | 0.75 | 100 | 75 |
-| 25 | `20 => 1.0` | 1.0 | 100 | 100 |
+| 0 | `0 => 0.0` | 0.0 | 80 | 0 |
+| 3 | `1 => 0.15` | 0.15 | 80 | 12 |
+| 7 | `5 => 0.35` | 0.35 | 80 | 28 |
+| 12 | `10 => 0.60` | 0.60 | 80 | 48 |
+| 25 | `20 => 1.0` | 1.0 | 80 | 80 |
 
 ---
 
@@ -387,34 +400,34 @@ class GalleryImagesCalculator extends BaseCalculator
 
 | Tip | Ən Yaxşı İstifadə | Nümunə |
 | --- | ------------------ | ------ |
-| **Binary** | Bəli/xeyr şərtləri | Profil şəkli var, e-poçt təsdiqlənib, təsvir doldurulub |
-| **Proportional** | Hədəfli "çox olan daha yaxşı" metriklər | Rəylər (hədəf 10), cavab nisbəti (hədəf %100) |
-| **Inverse** | Kəsim nöqtəli "az olan daha yaxşı" metriklər | Ləğv nisbəti, şikayət nisbəti, gəlməmə nisbəti |
-| **Tiered** | Addım əsaslı nailiyyətlər | Qalereya şəkilləri, xidmət sayısı, tamamlanmış mərhələlər |
+| **Binary** | Bəli/xeyr şərtləri | Kimlik təsdiqlənib, e-poçt onaylanıb, profil şəkli yüklənib |
+| **Proportional** | Hədəfli "çox olan daha yaxşı" metriklər | Cavab nisbəti (hədəf %100), rəy xalı (hədəf 4.8) |
+| **Inverse** | Kəsim nöqtəli "az olan daha yaxşı" metriklər | Host ləğv nisbəti, şikayət nisbəti, geri ödəmə nisbəti |
+| **Tiered** | Addım əsaslı nailiyyətlər | Elan fotoşəkilləri, imkan sayısı, tamamlanmış qonaqlamalar |
 
 #### Köməkçiləri Birləşdirmə
 
 Tək bir kalkulyator daxilində doğru köməkçini seçmək üçün məntiq istifadə edə bilərsiniz:
 
 ```php
-class ServiceDescriptionCalculator extends BaseCalculator
+class ListingDescriptionCalculator extends BaseCalculator
 {
     public function calculate(Model $scoreable, int $maxPoints, array $taskMetadata = []): array
     {
         $description = $scoreable->description ?? '';
-        $length = mb_strlen($description);
+        $length = mb_strlen(strip_tags($description));
 
         // Təsvir yoxdur = binary uğursuz
         if ($length === 0) {
             return $this->binaryScore(false, $maxPoints);
         }
 
-        // Uzunluq pillələrinə görə xallandır
+        // Təsvir keyfiyyət pillələrinə görə xallandır
         return $this->tieredScore($length, [
-            1   => 0.25,  // Nəsə var
-            50  => 0.50,  // Normal
-            150 => 0.75,  // Yaxşı
-            300 => 1.0,   // Əla
+            1   => 0.20,  // Nəsə var — heç nədən yaxşıdır
+            50  => 0.40,  // Qısa — əsasları əhatə edir
+            150 => 0.70,  // Ətraflı — imkanlar və qaydalar qeyd olunub
+            400 => 1.0,   // Hərtərəfli — məhəllə, məsləhətlər və s.
         ], $maxPoints);
     }
 }
@@ -425,14 +438,15 @@ class ServiceDescriptionCalculator extends BaseCalculator
 Bütün köməkçilər opsional `$metadata` massivi qəbul edir. Debug məlumatları, ara dəyərlər və ya göstərmə verilənlərini saxlamaq üçün istifadə edin:
 
 ```php
-return $this->proportionalScore($ratio, $maxPoints, [
-    'reviews_count' => $count,
-    'target' => 10,
+return $this->proportionalScore($rate, $maxPoints, [
+    'total_inquiries' => $total,
+    'responded' => $responded,
+    'response_rate' => 85.0,
 ]);
-// Qaytarır: ['score' => 70, 'metadata' => ['reviews_count' => 7, 'target' => 10]]
+// Qaytarır: ['score' => 85, 'metadata' => ['total_inquiries' => 20, 'responded' => 17, 'response_rate' => 85.0]]
 ```
 
-Metadata `model_scores_scores` cədvəlində saxlanılır və `$tenant->scoreBreakdown()` vasitəsilə əlçatandır.
+Metadata `model_scores_scores` cədvəlində saxlanılır və `$host->scoreBreakdown()` vasitəsilə əlçatandır.
 
 ---
 
