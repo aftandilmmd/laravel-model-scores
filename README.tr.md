@@ -207,43 +207,119 @@ $breakdown = $tenant->scoreBreakdown();
 $checklist = $tenant->scoreChecklist();
 ```
 
-### Hesaplayıcı Yardımcıları
+### Hesaplayıcı Referansı
 
-`BaseCalculator` yaygın puanlama kalıpları için yardımcı metodlar sunar:
+`BaseCalculator` yaygın puanlama kalıpları için dört yardımcı metod sunar. Her yardımcı aynı yapıyı döndürür:
 
 ```php
-// Ya hep ya hiç (boolean kontrol)
-return $this->binaryScore($condition, $maxPoints);
-
-// Orantılı (0.0–1.0 oran)
-return $this->proportionalScore($ratio, $maxPoints);
-
-// Ters orantı (düşük oran = yüksek puan)
-return $this->inverseScore($ratio, $threshold, $maxPoints);
-
-// Kademeli eşikler
-return $this->tieredScore($value, [
-    0 => 0.0, 5 => 0.25, 10 => 0.50, 25 => 0.75, 50 => 1.0,
-], $maxPoints);
+['score' => int, 'metadata' => array]
 ```
 
-#### Hesaplayıcı Örnekleri
+Herhangi bir yardımcıya özel `$metadata` da geçirebilirsiniz — puan ile birlikte hata ayıklama veya görüntüleme amacıyla saklanır.
 
-**Orantılı — Yorum sayısı**
+---
+
+#### `binaryScore` — Ya Hep Ya Hiç
+
+Koşul sağlandığında tam puan, aksi halde sıfır verir. "Profil fotoğrafı var mı" veya "e-posta doğrulanmış mı" gibi evet/hayır kontrolleri için kullanın.
 
 ```php
-class ReviewsCalculator extends BaseCalculator
+$this->binaryScore(bool $condition, int $maxPoints, array $metadata = []): array
+```
+
+| Parametre | Tip | Açıklama |
+| --------- | --- | -------- |
+| `$condition` | `bool` | Değerlendirilecek kontrol |
+| `$maxPoints` | `int` | `true` olduğunda verilen puan |
+
+**Formül:** `$condition ? $maxPoints : 0`
+
+**Örnek — Host kimlik doğrulaması (Airbnb Superhost):**
+
+```php
+class HostIdentityVerifiedCalculator extends BaseCalculator
 {
     public function calculate(Model $scoreable, int $maxPoints, array $taskMetadata = []): array
     {
-        $count = $scoreable->reviews()->count();
-
-        return $this->proportionalScore(min(1, $count / 10), $maxPoints);
+        return $this->binaryScore(
+            ! empty($scoreable->identity_verified_at),
+            $maxPoints,
+            ['verified' => ! empty($scoreable->identity_verified_at)]
+        );
     }
 }
 ```
 
-**Ters Orantı — İptal oranı (düşük daha iyi)**
+| Senaryo | maxPoints | Sonuç |
+| ------- | --------- | ----- |
+| Doğrulanmış | 50 | `['score' => 50, 'metadata' => ['verified' => true]]` |
+| Doğrulanmamış | 50 | `['score' => 0, 'metadata' => ['verified' => false]]` |
+
+---
+
+#### `proportionalScore` — Doğrusal Oran
+
+0.0 ile 1.0 arasındaki orana göre puan verir. Oran otomatik olarak sınırlanır — 0'ın altı 0, 1'in üstü 1 olur. Bir hedefe kadar "çok olan daha iyi" durumları için kullanın.
+
+```php
+$this->proportionalScore(float $ratio, int $maxPoints, array $metadata = []): array
+```
+
+| Parametre | Tip | Açıklama |
+| --------- | --- | -------- |
+| `$ratio` | `float` | 0.0–1.0 arası değer (otomatik sınırlanır) |
+| `$maxPoints` | `int` | Elde edilebilecek maksimum puan |
+
+**Formül:** `round(clamp($ratio, 0, 1) * $maxPoints)`
+
+**Örnek — Host yanıt oranı (Airbnb Superhost için %90+ gerekli):**
+
+```php
+class ResponseRateCalculator extends BaseCalculator
+{
+    public function calculate(Model $scoreable, int $maxPoints, array $taskMetadata = []): array
+    {
+        $total = $scoreable->inquiries()->where('created_at', '>=', now()->subYear())->count();
+        $responded = $scoreable->inquiries()->where('created_at', '>=', now()->subYear())
+            ->whereNotNull('responded_at')->count();
+
+        $rate = $total > 0 ? $responded / $total : 1.0;
+
+        return $this->proportionalScore($rate, $maxPoints, [
+            'total_inquiries' => $total,
+            'responded' => $responded,
+            'response_rate' => round($rate * 100, 1),
+        ]);
+    }
+}
+```
+
+| Yanıt Oranı | Oran | maxPoints | Puan |
+| ------------ | ---- | --------- | ---- |
+| %100 | 1.0 | 100 | 100 |
+| %90 | 0.9 | 100 | 90 |
+| %50 | 0.5 | 100 | 50 |
+| %0 | 0.0 | 100 | 0 |
+
+---
+
+#### `inverseScore` — Düşük Olan Daha İyi
+
+Oran düşük olduğunda yüksek puan verir. Puan, oranın 0 olduğu noktada `$maxPoints`'ten, oranın eşiğe ulaştığı noktada 0'a doğrusal olarak azalır. İptal oranı veya şikayet oranı gibi azın daha iyi olduğu metrikler için kullanın.
+
+```php
+$this->inverseScore(float $ratio, float $threshold, int $maxPoints, array $metadata = []): array
+```
+
+| Parametre | Tip | Açıklama |
+| --------- | --- | -------- |
+| `$ratio` | `float` | Mevcut oran (ör. %15 için 0.15) |
+| `$threshold` | `float` | Puanın sıfır olacağı oran (ör. %20 için 0.20) |
+| `$maxPoints` | `int` | Oran 0 olduğunda verilen puan |
+
+**Formül:** `ratio >= threshold ? 0 : round((1 - ratio / threshold) * maxPoints)`
+
+**Örnek — İptal oranı (%0 = tam puan, %20+ = sıfır):**
 
 ```php
 class CancellationRateCalculator extends BaseCalculator
@@ -259,7 +335,33 @@ class CancellationRateCalculator extends BaseCalculator
 }
 ```
 
-**Kademeli — Galeri görsel sayısı**
+| İptal Oranı | Eşik | maxPoints | Puan |
+| ----------- | ---- | --------- | ---- |
+| %0 (0.00) | 0.20 | 100 | 100 |
+| %5 (0.05) | 0.20 | 100 | 75 |
+| %10 (0.10) | 0.20 | 100 | 50 |
+| %15 (0.15) | 0.20 | 100 | 25 |
+| %20+ (0.20) | 0.20 | 100 | 0 |
+
+---
+
+#### `tieredScore` — Kademeli Eşikler
+
+Değerin hangi kademeye düştüğüne göre puan verir. Her kademe bir minimum değeri bir orana (0.0–1.0) eşler ve eşleşen en yüksek kademenin oranı `proportionalScore` ile kullanılır. "En az 5 fotoğraf yükle = %50" gibi adım bazlı puanlama için kullanın.
+
+```php
+$this->tieredScore(float $value, array $tiers, int $maxPoints, array $metadata = []): array
+```
+
+| Parametre | Tip | Açıklama |
+| --------- | --- | -------- |
+| `$value` | `float` | Ölçülen değer (ör. görsel sayısı) |
+| `$tiers` | `array` | `[eşik => oran]` çiftleri, ör. `[0 => 0.0, 5 => 0.5, 10 => 1.0]` |
+| `$maxPoints` | `int` | Elde edilebilecek maksimum puan |
+
+**Formül:** `$value >= threshold` olan en yüksek kademeyi bul, oranını al, sonra `round(oran * maxPoints)`.
+
+**Örnek — Galeri görselleri:**
 
 ```php
 class GalleryImagesCalculator extends BaseCalculator
@@ -267,13 +369,76 @@ class GalleryImagesCalculator extends BaseCalculator
     public function calculate(Model $scoreable, int $maxPoints, array $taskMetadata = []): array
     {
         return $this->tieredScore($scoreable->galleryImages()->count(), [
-            0 => 0.0, 3 => 0.25, 5 => 0.50, 10 => 0.75, 20 => 1.0,
+            0  => 0.0,   // 0 görsel  → %0
+            3  => 0.25,  // 3+ görsel → %25
+            5  => 0.50,  // 5+ görsel → %50
+            10 => 0.75,  // 10+ görsel → %75
+            20 => 1.0,   // 20+ görsel → %100
         ], $maxPoints);
     }
 }
 ```
 
-Her hesaplayıcı `['score' => int, 'metadata' => array]` döndürmelidir. Yardımcı metodlar bunu sizin için halleder.
+| Görsel | Eşleşen Kademe | Oran | maxPoints | Puan |
+| ------ | -------------- | ---- | --------- | ---- |
+| 0 | `0 => 0.0` | 0.0 | 100 | 0 |
+| 4 | `3 => 0.25` | 0.25 | 100 | 25 |
+| 7 | `5 => 0.50` | 0.50 | 100 | 50 |
+| 15 | `10 => 0.75` | 0.75 | 100 | 75 |
+| 25 | `20 => 1.0` | 1.0 | 100 | 100 |
+
+---
+
+#### Doğru Hesaplayıcı Tipini Seçme
+
+| Tip | En İyi Kullanım | Örnek |
+| --- | --------------- | ----- |
+| **Binary** | Evet/hayır koşulları | Profil fotoğrafı var, e-posta doğrulanmış, açıklama doldurulmuş |
+| **Proportional** | Hedefli "çok olan daha iyi" metrikler | Yorumlar (hedef 10), yanıt oranı (hedef %100) |
+| **Inverse** | Kesim noktalı "az olan daha iyi" metrikler | İptal oranı, şikayet oranı, gelmeme oranı |
+| **Tiered** | Adım bazlı başarılar | Galeri görselleri, hizmet sayısı, tamamlanan kilometre taşları |
+
+#### Yardımcıları Birleştirme
+
+Tek bir hesaplayıcı içinde doğru yardımcıyı seçmek için mantık kullanabilirsiniz:
+
+```php
+class ServiceDescriptionCalculator extends BaseCalculator
+{
+    public function calculate(Model $scoreable, int $maxPoints, array $taskMetadata = []): array
+    {
+        $description = $scoreable->description ?? '';
+        $length = mb_strlen($description);
+
+        // Açıklama yok = binary başarısız
+        if ($length === 0) {
+            return $this->binaryScore(false, $maxPoints);
+        }
+
+        // Uzunluk kademelerine göre puanla
+        return $this->tieredScore($length, [
+            1   => 0.25,  // Bir şeyler var
+            50  => 0.50,  // İdare eder
+            150 => 0.75,  // İyi
+            300 => 1.0,   // Mükemmel
+        ], $maxPoints);
+    }
+}
+```
+
+#### Metadata Kullanımı
+
+Tüm yardımcılar opsiyonel `$metadata` dizisi kabul eder. Hata ayıklama bilgileri, ara değerler veya görüntüleme verileri saklamak için kullanın:
+
+```php
+return $this->proportionalScore($ratio, $maxPoints, [
+    'reviews_count' => $count,
+    'target' => 10,
+]);
+// Döndürür: ['score' => 70, 'metadata' => ['reviews_count' => 7, 'target' => 10]]
+```
+
+Metadata, `model_scores_scores` tablosunda saklanır ve `$tenant->scoreBreakdown()` ile erişilebilir.
 
 ---
 

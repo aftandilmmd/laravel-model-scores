@@ -207,29 +207,71 @@ $breakdown = $tenant->scoreBreakdown();
 $checklist = $tenant->scoreChecklist();
 ```
 
-### Kalkulyator Köməkçiləri
+### Kalkulyator Referansı
 
-`BaseCalculator` ümumi xallandırma nümunələri üçün köməkçi metodlar təqdim edir:
+`BaseCalculator` ümumi xallandırma nümunələri üçün dörd köməkçi metod təqdim edir. Hər köməkçi eyni strukturu qaytarır:
 
 ```php
-// Ya hamısı ya heç nə (boolean yoxlama)
-return $this->binaryScore($condition, $maxPoints);
-
-// Mütənasib (0.0–1.0 nisbət)
-return $this->proportionalScore($ratio, $maxPoints);
-
-// Əks nisbət (aşağı nisbət = yüksək xal)
-return $this->inverseScore($ratio, $threshold, $maxPoints);
-
-// Pilləli hədlər
-return $this->tieredScore($value, [
-    0 => 0.0, 5 => 0.25, 10 => 0.50, 25 => 0.75, 50 => 1.0,
-], $maxPoints);
+['score' => int, 'metadata' => array]
 ```
 
-#### Kalkulyator Nümunələri
+İstənilən köməkçiyə xüsusi `$metadata` da ötürə bilərsiniz — xal ilə birlikdə debug və ya göstərmə məqsədilə saxlanılır.
 
-**Mütənasib — Rəy sayısı**
+---
+
+#### `binaryScore` — Ya Hamısı Ya Heç Nə
+
+Şərt ödənildikdə tam xal, əks halda sıfır verir. "Profil şəkli var mı" və ya "e-poçt təsdiqlənib mi" kimi bəli/xeyr yoxlamaları üçün istifadə edin.
+
+```php
+$this->binaryScore(bool $condition, int $maxPoints, array $metadata = []): array
+```
+
+| Parametr | Tip | Təsvir |
+| -------- | --- | ------ |
+| `$condition` | `bool` | Qiymətləndiriləcək yoxlama |
+| `$maxPoints` | `int` | `true` olduqda verilən xal |
+
+**Formul:** `$condition ? $maxPoints : 0`
+
+**Nümunə — Profil şəkli yüklənib mi:**
+
+```php
+class ProfilePhotoCalculator extends BaseCalculator
+{
+    public function calculate(Model $scoreable, int $maxPoints, array $taskMetadata = []): array
+    {
+        return $this->binaryScore(
+            ! empty($scoreable->profile_photo),
+            $maxPoints
+        );
+    }
+}
+```
+
+| Ssenari | maxPoints | Nəticə |
+| ------- | --------- | ------ |
+| Şəkil var | 50 | `['score' => 50, 'metadata' => []]` |
+| Şəkil yoxdur | 50 | `['score' => 0, 'metadata' => []]` |
+
+---
+
+#### `proportionalScore` — Xətti Nisbət
+
+0.0 ilə 1.0 arasındakı nisbətə görə xal verir. Nisbət avtomatik məhdudlaşdırılır — 0-dan aşağı 0, 1-dən yuxarı 1 olur. Hədəfə qədər "çox olan daha yaxşı" halları üçün istifadə edin.
+
+```php
+$this->proportionalScore(float $ratio, int $maxPoints, array $metadata = []): array
+```
+
+| Parametr | Tip | Təsvir |
+| -------- | --- | ------ |
+| `$ratio` | `float` | 0.0–1.0 arası dəyər (avtomatik məhdudlaşdırılır) |
+| `$maxPoints` | `int` | Əldə edilə biləcək maksimum xal |
+
+**Formul:** `round(clamp($ratio, 0, 1) * $maxPoints)`
+
+**Nümunə — Rəy sayısı (hədəf: tam xal üçün 10 rəy):**
 
 ```php
 class ReviewsCalculator extends BaseCalculator
@@ -238,12 +280,40 @@ class ReviewsCalculator extends BaseCalculator
     {
         $count = $scoreable->reviews()->count();
 
-        return $this->proportionalScore(min(1, $count / 10), $maxPoints);
+        return $this->proportionalScore(
+            min(1, $count / 10),
+            $maxPoints
+        );
     }
 }
 ```
 
-**Əks Nisbət — Ləğv nisbəti (aşağı daha yaxşı)**
+| Rəy | Nisbət | maxPoints | Xal |
+| --- | ------ | --------- | --- |
+| 0 | 0.0 | 100 | 0 |
+| 3 | 0.3 | 100 | 30 |
+| 7 | 0.7 | 100 | 70 |
+| 10+ | 1.0 | 100 | 100 |
+
+---
+
+#### `inverseScore` — Aşağı Olan Daha Yaxşı
+
+Nisbət aşağı olduqda yüksək xal verir. Xal, nisbətin 0 olduğu nöqtədə `$maxPoints`-dən, nisbətin həddə çatdığı nöqtədə 0-a doğru xətti azalır. Ləğv nisbəti və ya şikayət nisbəti kimi azın daha yaxşı olduğu metriklər üçün istifadə edin.
+
+```php
+$this->inverseScore(float $ratio, float $threshold, int $maxPoints, array $metadata = []): array
+```
+
+| Parametr | Tip | Təsvir |
+| -------- | --- | ------ |
+| `$ratio` | `float` | Cari nisbət (məs. %15 üçün 0.15) |
+| `$threshold` | `float` | Xalın sıfır olacağı nisbət (məs. %20 üçün 0.20) |
+| `$maxPoints` | `int` | Nisbət 0 olduqda verilən xal |
+
+**Formul:** `ratio >= threshold ? 0 : round((1 - ratio / threshold) * maxPoints)`
+
+**Nümunə — Ləğv nisbəti (%0 = tam xal, %20+ = sıfır):**
 
 ```php
 class CancellationRateCalculator extends BaseCalculator
@@ -259,7 +329,33 @@ class CancellationRateCalculator extends BaseCalculator
 }
 ```
 
-**Pilləli — Qalereya şəkil sayısı**
+| Ləğv Nisbəti | Hədd | maxPoints | Xal |
+| ------------ | ---- | --------- | --- |
+| %0 (0.00) | 0.20 | 100 | 100 |
+| %5 (0.05) | 0.20 | 100 | 75 |
+| %10 (0.10) | 0.20 | 100 | 50 |
+| %15 (0.15) | 0.20 | 100 | 25 |
+| %20+ (0.20) | 0.20 | 100 | 0 |
+
+---
+
+#### `tieredScore` — Pilləli Hədlər
+
+Dəyərin hansı pilləyə düşdüyünə görə xal verir. Hər pillə minimum dəyəri nisbətə (0.0–1.0) eşləyir və uyğun gələn ən yüksək pillənin nisbəti `proportionalScore` ilə istifadə olunur. "Ən azı 5 şəkil yüklə = %50" kimi addım əsaslı xallandırma üçün istifadə edin.
+
+```php
+$this->tieredScore(float $value, array $tiers, int $maxPoints, array $metadata = []): array
+```
+
+| Parametr | Tip | Təsvir |
+| -------- | --- | ------ |
+| `$value` | `float` | Ölçülən dəyər (məs. şəkil sayısı) |
+| `$tiers` | `array` | `[hədd => nisbət]` cütləri, məs. `[0 => 0.0, 5 => 0.5, 10 => 1.0]` |
+| `$maxPoints` | `int` | Əldə edilə biləcək maksimum xal |
+
+**Formul:** `$value >= threshold` olan ən yüksək pilləni tap, nisbətini al, sonra `round(nisbət * maxPoints)`.
+
+**Nümunə — Qalereya şəkilləri:**
 
 ```php
 class GalleryImagesCalculator extends BaseCalculator
@@ -267,13 +363,76 @@ class GalleryImagesCalculator extends BaseCalculator
     public function calculate(Model $scoreable, int $maxPoints, array $taskMetadata = []): array
     {
         return $this->tieredScore($scoreable->galleryImages()->count(), [
-            0 => 0.0, 3 => 0.25, 5 => 0.50, 10 => 0.75, 20 => 1.0,
+            0  => 0.0,   // 0 şəkil  → %0
+            3  => 0.25,  // 3+ şəkil → %25
+            5  => 0.50,  // 5+ şəkil → %50
+            10 => 0.75,  // 10+ şəkil → %75
+            20 => 1.0,   // 20+ şəkil → %100
         ], $maxPoints);
     }
 }
 ```
 
-Hər kalkulyator `['score' => int, 'metadata' => array]` qaytarmalıdır. Köməkçi metodlar bunu sizin üçün həll edir.
+| Şəkil | Uyğun Pillə | Nisbət | maxPoints | Xal |
+| ----- | ----------- | ------ | --------- | --- |
+| 0 | `0 => 0.0` | 0.0 | 100 | 0 |
+| 4 | `3 => 0.25` | 0.25 | 100 | 25 |
+| 7 | `5 => 0.50` | 0.50 | 100 | 50 |
+| 15 | `10 => 0.75` | 0.75 | 100 | 75 |
+| 25 | `20 => 1.0` | 1.0 | 100 | 100 |
+
+---
+
+#### Doğru Kalkulyator Tipini Seçmə
+
+| Tip | Ən Yaxşı İstifadə | Nümunə |
+| --- | ------------------ | ------ |
+| **Binary** | Bəli/xeyr şərtləri | Profil şəkli var, e-poçt təsdiqlənib, təsvir doldurulub |
+| **Proportional** | Hədəfli "çox olan daha yaxşı" metriklər | Rəylər (hədəf 10), cavab nisbəti (hədəf %100) |
+| **Inverse** | Kəsim nöqtəli "az olan daha yaxşı" metriklər | Ləğv nisbəti, şikayət nisbəti, gəlməmə nisbəti |
+| **Tiered** | Addım əsaslı nailiyyətlər | Qalereya şəkilləri, xidmət sayısı, tamamlanmış mərhələlər |
+
+#### Köməkçiləri Birləşdirmə
+
+Tək bir kalkulyator daxilində doğru köməkçini seçmək üçün məntiq istifadə edə bilərsiniz:
+
+```php
+class ServiceDescriptionCalculator extends BaseCalculator
+{
+    public function calculate(Model $scoreable, int $maxPoints, array $taskMetadata = []): array
+    {
+        $description = $scoreable->description ?? '';
+        $length = mb_strlen($description);
+
+        // Təsvir yoxdur = binary uğursuz
+        if ($length === 0) {
+            return $this->binaryScore(false, $maxPoints);
+        }
+
+        // Uzunluq pillələrinə görə xallandır
+        return $this->tieredScore($length, [
+            1   => 0.25,  // Nəsə var
+            50  => 0.50,  // Normal
+            150 => 0.75,  // Yaxşı
+            300 => 1.0,   // Əla
+        ], $maxPoints);
+    }
+}
+```
+
+#### Metadata İstifadəsi
+
+Bütün köməkçilər opsional `$metadata` massivi qəbul edir. Debug məlumatları, ara dəyərlər və ya göstərmə verilənlərini saxlamaq üçün istifadə edin:
+
+```php
+return $this->proportionalScore($ratio, $maxPoints, [
+    'reviews_count' => $count,
+    'target' => 10,
+]);
+// Qaytarır: ['score' => 70, 'metadata' => ['reviews_count' => 7, 'target' => 10]]
+```
+
+Metadata `model_scores_scores` cədvəlində saxlanılır və `$tenant->scoreBreakdown()` vasitəsilə əlçatandır.
 
 ---
 

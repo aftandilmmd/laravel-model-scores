@@ -207,77 +207,246 @@ $breakdown = $tenant->scoreBreakdown();
 $checklist = $tenant->scoreChecklist();
 ```
 
-## Calculator Helpers
+## Calculator Reference
 
-`BaseCalculator` provides helpers for common scoring patterns:
+`BaseCalculator` provides four helper methods for common scoring patterns. Every helper returns the same structure:
 
 ```php
-// All-or-nothing (boolean check)
-return $this->binaryScore($condition, $maxPoints);
-
-// Proportional (0.0–1.0 ratio)
-return $this->proportionalScore($ratio, $maxPoints);
-
-// Inverse (lower ratio = higher score)
-return $this->inverseScore($ratio, $threshold, $maxPoints);
-
-// Tiered thresholds
-return $this->tieredScore($value, [
-    0 => 0.0,     // 0+ items = 0%
-    5 => 0.25,    // 5+ items = 25%
-    10 => 0.50,   // 10+ items = 50%
-    25 => 0.75,   // 25+ items = 75%
-    50 => 1.0,    // 50+ items = 100%
-], $maxPoints);
+['score' => int, 'metadata' => array]
 ```
 
-### Calculator Examples
+You can also pass custom `$metadata` to any helper — it will be stored alongside the score for debugging or display purposes.
 
-#### Proportional — Reviews count
+---
+
+### `binaryScore` — All or Nothing
+
+Awards full points when a condition is met, zero otherwise. Use for yes/no checks like "has a profile photo" or "has verified email".
 
 ```php
-class ReviewsCalculator extends BaseCalculator
+$this->binaryScore(bool $condition, int $maxPoints, array $metadata = []): array
+```
+
+| Parameter | Type | Description |
+| --------- | ---- | ----------- |
+| `$condition` | `bool` | The check to evaluate |
+| `$maxPoints` | `int` | Points awarded when `true` |
+
+**Formula:** `$condition ? $maxPoints : 0`
+
+**Example — Host identity verification (Airbnb Superhost):**
+
+```php
+class HostIdentityVerifiedCalculator extends BaseCalculator
 {
     public function calculate(Model $scoreable, int $maxPoints, array $taskMetadata = []): array
     {
-        $count = $scoreable->reviews()->count();
-
-        return $this->proportionalScore(min(1, $count / 10), $maxPoints);
+        return $this->binaryScore(
+            ! empty($scoreable->identity_verified_at),
+            $maxPoints,
+            ['verified' => ! empty($scoreable->identity_verified_at)]
+        );
     }
 }
 ```
 
-#### Inverse — Cancellation rate (lower is better)
+| Scenario | maxPoints | Result |
+| -------- | --------- | ------ |
+| Verified | 50 | `['score' => 50, 'metadata' => ['verified' => true]]` |
+| Not verified | 50 | `['score' => 0, 'metadata' => ['verified' => false]]` |
+
+---
+
+### `proportionalScore` — Linear Ratio
+
+Awards points proportional to a ratio between 0.0 and 1.0. The ratio is clamped — values below 0 become 0, above 1 become 1. Use when "more is better" up to a target.
+
+```php
+$this->proportionalScore(float $ratio, int $maxPoints, array $metadata = []): array
+```
+
+| Parameter | Type | Description |
+| --------- | ---- | ----------- |
+| `$ratio` | `float` | Value between 0.0–1.0 (clamped automatically) |
+| `$maxPoints` | `int` | Maximum achievable points |
+
+**Formula:** `round(clamp($ratio, 0, 1) * $maxPoints)`
+
+**Example — Host response rate (Airbnb requires 90%+ for Superhost):**
+
+```php
+class ResponseRateCalculator extends BaseCalculator
+{
+    public function calculate(Model $scoreable, int $maxPoints, array $taskMetadata = []): array
+    {
+        $total = $scoreable->inquiries()->where('created_at', '>=', now()->subYear())->count();
+        $responded = $scoreable->inquiries()->where('created_at', '>=', now()->subYear())
+            ->whereNotNull('responded_at')->count();
+
+        $rate = $total > 0 ? $responded / $total : 1.0;
+
+        return $this->proportionalScore($rate, $maxPoints, [
+            'total_inquiries' => $total,
+            'responded' => $responded,
+            'response_rate' => round($rate * 100, 1),
+        ]);
+    }
+}
+```
+
+| Response Rate | Ratio | maxPoints | Score |
+| ------------- | ----- | --------- | ----- |
+| 100% | 1.0 | 100 | 100 |
+| 90% | 0.9 | 100 | 90 |
+| 50% | 0.5 | 100 | 50 |
+| 0% | 0.0 | 100 | 0 |
+
+---
+
+### `inverseScore` — Lower is Better
+
+Awards higher points when a ratio is low. The score decreases linearly from `$maxPoints` (at ratio 0) to 0 (at ratio >= threshold). Use for metrics where less is better, like cancellation rates or complaint ratios.
+
+```php
+$this->inverseScore(float $ratio, float $threshold, int $maxPoints, array $metadata = []): array
+```
+
+| Parameter | Type | Description |
+| --------- | ---- | ----------- |
+| `$ratio` | `float` | The current rate (e.g. 0.15 for 15%) |
+| `$threshold` | `float` | The rate at which score becomes 0 (e.g. 0.20 for 20%) |
+| `$maxPoints` | `int` | Points awarded when ratio is 0 |
+
+**Formula:** `ratio >= threshold ? 0 : round((1 - ratio / threshold) * maxPoints)`
+
+**Example — Host cancellation rate (Airbnb Superhost requires < 1%):**
 
 ```php
 class CancellationRateCalculator extends BaseCalculator
 {
     public function calculate(Model $scoreable, int $maxPoints, array $taskMetadata = []): array
     {
-        $total = $scoreable->bookings()->count();
-        $cancelled = $scoreable->bookings()->cancelled()->count();
+        $total = $scoreable->reservations()->where('check_in', '>=', now()->subYear())->count();
+        $cancelled = $scoreable->reservations()->where('check_in', '>=', now()->subYear())
+            ->where('cancelled_by', 'host')->count();
+
         $rate = $total > 0 ? $cancelled / $total : 0;
 
-        return $this->inverseScore($rate, 0.20, $maxPoints);
+        return $this->inverseScore($rate, 0.05, $maxPoints, [
+            'total_reservations' => $total,
+            'cancelled_by_host' => $cancelled,
+            'cancellation_rate' => round($rate * 100, 2),
+        ]);
     }
 }
 ```
 
-#### Tiered — Gallery images
+| Cancel Rate | Threshold | maxPoints | Score |
+| ----------- | --------- | --------- | ----- |
+| 0% (0.00) | 0.05 | 100 | 100 |
+| 1% (0.01) | 0.05 | 100 | 80 |
+| 2.5% (0.025) | 0.05 | 100 | 50 |
+| 4% (0.04) | 0.05 | 100 | 20 |
+| 5%+ (0.05) | 0.05 | 100 | 0 |
+
+---
+
+### `tieredScore` — Threshold Tiers
+
+Awards points based on which tier a value falls into. Each tier maps a minimum value to a ratio (0.0–1.0), and the highest matching tier's ratio is used with `proportionalScore`. Use for step-based scoring like "upload at least 5 photos for 50%".
 
 ```php
-class GalleryImagesCalculator extends BaseCalculator
+$this->tieredScore(float $value, array $tiers, int $maxPoints, array $metadata = []): array
+```
+
+| Parameter | Type | Description |
+| --------- | ---- | ----------- |
+| `$value` | `float` | The measured value (e.g. image count) |
+| `$tiers` | `array` | `[threshold => ratio]` pairs, e.g. `[0 => 0.0, 5 => 0.5, 10 => 1.0]` |
+| `$maxPoints` | `int` | Maximum achievable points |
+
+**Formula:** Find the highest tier where `$value >= threshold`, take its ratio, then `round(ratio * maxPoints)`.
+
+**Example — Listing photos (Airbnb recommends 20+ photos):**
+
+```php
+class ListingPhotosCalculator extends BaseCalculator
 {
     public function calculate(Model $scoreable, int $maxPoints, array $taskMetadata = []): array
     {
-        return $this->tieredScore($scoreable->galleryImages()->count(), [
-            0 => 0.0, 3 => 0.25, 5 => 0.50, 10 => 0.75, 20 => 1.0,
+        return $this->tieredScore($scoreable->photos()->count(), [
+            0  => 0.0,   // No photos
+            1  => 0.15,  // At least one — listing is visible
+            5  => 0.35,  // Basic coverage of the space
+            10 => 0.60,  // Good — each room shown
+            15 => 0.80,  // Detailed — amenities and neighborhood
+            20 => 1.0,   // Professional-level listing
         ], $maxPoints);
     }
 }
 ```
 
-Every calculator must return `['score' => int, 'metadata' => array]`. The helpers handle this for you.
+| Photos | Matched Tier | Ratio | maxPoints | Score |
+| ------ | ------------ | ----- | --------- | ----- |
+| 0 | `0 => 0.0` | 0.0 | 80 | 0 |
+| 3 | `1 => 0.15` | 0.15 | 80 | 12 |
+| 7 | `5 => 0.35` | 0.35 | 80 | 28 |
+| 12 | `10 => 0.60` | 0.60 | 80 | 48 |
+| 25 | `20 => 1.0` | 1.0 | 80 | 80 |
+
+---
+
+### Choosing the Right Calculator Type
+
+| Type | Best for | Example |
+| ---- | -------- | ------- |
+| **Binary** | Yes/no conditions | Identity verified, email confirmed, profile photo uploaded |
+| **Proportional** | "More is better" metrics with a target | Response rate (target 100%), review score (target 4.8) |
+| **Inverse** | "Less is better" metrics with a cutoff | Host cancellation rate, complaint ratio, refund rate |
+| **Tiered** | Step-based achievements | Listing photos, amenities count, completed stays |
+
+### Combining Helpers
+
+You can use logic to pick the right helper within a single calculator:
+
+```php
+class ListingDescriptionCalculator extends BaseCalculator
+{
+    public function calculate(Model $scoreable, int $maxPoints, array $taskMetadata = []): array
+    {
+        $description = $scoreable->description ?? '';
+        $length = mb_strlen(strip_tags($description));
+
+        // No description = binary fail
+        if ($length === 0) {
+            return $this->binaryScore(false, $maxPoints);
+        }
+
+        // Score based on description quality tiers
+        return $this->tieredScore($length, [
+            1   => 0.20,  // Has something — better than nothing
+            50  => 0.40,  // Brief — covers the basics
+            150 => 0.70,  // Detailed — mentions amenities & rules
+            400 => 1.0,   // Comprehensive — neighborhood, tips, etc.
+        ], $maxPoints);
+    }
+}
+```
+
+### Passing Metadata
+
+All helpers accept an optional `$metadata` array. Use it to store debug info, intermediate values, or display data:
+
+```php
+return $this->proportionalScore($rate, $maxPoints, [
+    'total_inquiries' => $total,
+    'responded' => $responded,
+    'response_rate' => 85.0,
+]);
+// Returns: ['score' => 85, 'metadata' => ['total_inquiries' => 20, 'responded' => 17, 'response_rate' => 85.0]]
+```
+
+Metadata is stored in the `model_scores_scores` table and accessible via `$host->scoreBreakdown()`.
 
 ---
 
